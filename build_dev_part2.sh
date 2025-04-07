@@ -3,6 +3,8 @@ set -euo pipefail
 
 echo -e "\033[1;36m--- Build Part 2: Copying Dev State and Finalizing ---\033[0m"
 
+rm ./claude-desktop_0.9.1_amd64.deb
+
 # Define Project Root early
 PROJECT_ROOT="$(pwd)"
 # Define build_dev path based on expected structure from Part 1
@@ -248,5 +250,9 @@ elif [ "$BUILD_FORMAT" = "appimage" ]; then
     fi
 fi
 echo -e "\033[1;34m======================\033[0m"
+
+sudo dpkg -P claude-desktop
+sudo dpkg -i ./claude-desktop_0.9.1_amd64.deb
+claude-desktop
 
 exit 0
