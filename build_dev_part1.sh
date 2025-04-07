@@ -367,10 +367,32 @@ mkdir -p app.asar.contents/resources/i18n
 cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/Tray"* app.asar.contents/resources/
 cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/"*-*.json app.asar.contents/resources/i18n/
 
-echo "Downloading Main Window Fix Assets (Placeholder)..."
-cd app.asar.contents
-# wget -O- https://github.com/emsi/claude-desktop/raw/refs/heads/main/assets/main_window.tgz | tar -zxvf -
-cd .. # Back to APP_STAGING_DIR (within build_dev)
+echo "Switching win32 detection flag to linux to enable titlebar"
+
+TARGET_DIR="build_dev/electron-app/app.asar.contents/.vite/renderer/main_window/assets"
+TARGET_PATTERN="main-*.js"
+
+# Find the target file (ensure only one matches)
+TARGET_FILES=$(find "$TARGET_DIR" -maxdepth 1 -name "$TARGET_PATTERN")
+NUM_FILES=$(echo "$TARGET_FILES" | wc -l)
+
+if [ "$NUM_FILES" -ne 1 ]; then
+  echo "Error: Expected exactly one file matching '$TARGET_PATTERN' in '$TARGET_DIR', but found $NUM_FILES." >&2
+  echo "Found files: $TARGET_FILES" >&2
+  # Consider exiting: exit 1
+else
+  TARGET_FILE="$TARGET_FILES" # Assign the found file path
+  echo "Attempting to replace 'win32' with 'linux' in $TARGET_FILE..."
+  sed -i 's/win32/linux/g' "$TARGET_FILE"
+
+  # Verification
+  if grep -q 'linux' "$TARGET_FILE" && ! grep -q 'win32' "$TARGET_FILE"; then
+    echo "Successfully replaced 'win32' with 'linux' in $TARGET_FILE"
+  else
+    echo "Error: Failed to replace 'win32' with 'linux' in $TARGET_FILE" >&2
+    # Consider exiting: exit 1
+  fi
+fi
 
 # --- End of Part 1 ---
 echo -e "\033[1;36m--- Saving Build State for Part 2 ---\033[0m"
