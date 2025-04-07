@@ -369,19 +369,30 @@ cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/"*-*.json app.asar.contents/resource
 
 echo "Switching win32 detection flag to linux to enable titlebar"
 
-TARGET_DIR="build_dev/electron-app/app.asar.contents/.vite/renderer/main_window/assets"
+echo "Current working directory: '$PWD'"
+
+SEARCH_BASE="app.asar.contents/.vite/renderer/main_window/assets"
 TARGET_PATTERN="main-*.js"
 
-# Find the target file (ensure only one matches)
-TARGET_FILES=$(find "$TARGET_DIR" -maxdepth 1 -name "$TARGET_PATTERN")
-NUM_FILES=$(echo "$TARGET_FILES" | wc -l)
+echo "Searching for '$TARGET_PATTERN' within '$SEARCH_BASE'..."
+# Find the target file recursively (ensure only one matches)
+# Use -type f to ensure we only find files
+TARGET_FILES=$(find "$SEARCH_BASE" -type f -name "$TARGET_PATTERN")
+# Count non-empty lines to get the number of files found
+NUM_FILES=$(echo "$TARGET_FILES" | grep -c .)
 
-if [ "$NUM_FILES" -ne 1 ]; then
-  echo "Error: Expected exactly one file matching '$TARGET_PATTERN' in '$TARGET_DIR', but found $NUM_FILES." >&2
-  echo "Found files: $TARGET_FILES" >&2
+if [ "$NUM_FILES" -eq 0 ]; then
+  echo "Error: No file matching '$TARGET_PATTERN' found within '$SEARCH_BASE'." >&2
+  # Consider exiting: exit 1
+elif [ "$NUM_FILES" -gt 1 ]; then
+  echo "Error: Expected exactly one file matching '$TARGET_PATTERN' within '$SEARCH_BASE', but found $NUM_FILES." >&2
+  echo "Found files:" >&2
+  echo "$TARGET_FILES" >&2
   # Consider exiting: exit 1
 else
+  # Exactly one file found
   TARGET_FILE="$TARGET_FILES" # Assign the found file path
+  echo "Found target file: $TARGET_FILE"
   echo "Attempting to replace 'win32' with 'linux' in $TARGET_FILE..."
   sed -i 's/win32/linux/g' "$TARGET_FILE"
 
@@ -389,7 +400,7 @@ else
   if grep -q 'linux' "$TARGET_FILE" && ! grep -q 'win32' "$TARGET_FILE"; then
     echo "Successfully replaced 'win32' with 'linux' in $TARGET_FILE"
   else
-    echo "Error: Failed to replace 'win32' with 'linux' in $TARGET_FILE" >&2
+    echo "Error: Failed to replace 'win32' with 'linux' in $TARGET_FILE. Check file contents." >&2
     # Consider exiting: exit 1
   fi
 fi
