@@ -1,6 +1,8 @@
 # Build output
-build/
-build-*/
+build*/
+
+# Dev files
+.dev/
 
 # Reference implementation
 reference/
