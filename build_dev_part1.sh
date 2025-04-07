@@ -367,12 +367,14 @@ mkdir -p app.asar.contents/resources/i18n
 cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/Tray"* app.asar.contents/resources/
 cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/"*-*.json app.asar.contents/resources/i18n/
 
-echo "Switching win32 detection flag to linux to enable titlebar"
+echo "##############################################################"
+echo "Removing "'!'" from 'if ("'!'"isWindows && isMainWindow) return null;'"
+echo "detection flag to to enable title bar"
 
 echo "Current working directory: '$PWD'"
 
 SEARCH_BASE="app.asar.contents/.vite/renderer/main_window/assets"
-TARGET_PATTERN="main-*.js"
+TARGET_PATTERN="MainWindowPage-*.js"
 
 echo "Searching for '$TARGET_PATTERN' within '$SEARCH_BASE'..."
 # Find the target file recursively (ensure only one matches)
@@ -393,15 +395,15 @@ else
   # Exactly one file found
   TARGET_FILE="$TARGET_FILES" # Assign the found file path
   echo "Found target file: $TARGET_FILE"
-  echo "Attempting to replace 'win32' with 'linux' in $TARGET_FILE..."
-  sed -i 's/win32/linux/g' "$TARGET_FILE"
+  echo "Attempting to replace '"'!'"d&&e' with 'd&&e' in $TARGET_FILE..."
+  sed -i 's/\!d\&\&e/d\&\&e/g' "$TARGET_FILE"
 
   # Verification
-  if grep -q 'linux' "$TARGET_FILE" && ! grep -q 'win32' "$TARGET_FILE"; then
-    echo "Successfully replaced 'win32' with 'linux' in $TARGET_FILE"
+  if grep -q 'd\&\&e' "$TARGET_FILE" && ! grep -q '\!d\&\&e' "$TARGET_FILE"; then
+    echo "Successfully replaced '"'!'"d&&e' with 'd&&e' in $TARGET_FILE"
   else
-    echo "Error: Failed to replace 'win32' with 'linux' in $TARGET_FILE. Check file contents." >&2
-    # Consider exiting: exit 1
+    echo "Error: Failed to replace '"'!'"d&&e' with 'd&&e' in $TARGET_FILE. Check file contents." >&2
+    exit 1
   fi
 fi
 
