@@ -201,3 +201,49 @@ The Claude Desktop application itself is subject to [Anthropic's Consumer Terms]
 ## Contributing
 
 Contributions are welcome! By submitting a contribution, you agree to license it under the same dual-license terms as this project.
+
+
+## Fedora (dnf) Quick Start
+
+- Install a prebuilt RPM:
+  - x86_64:
+    ```bash
+    sudo dnf install -y ./claude-desktop_VERSION-1.x86_64.rpm
+    ```
+  - aarch64:
+    ```bash
+    sudo dnf install -y ./claude-desktop_VERSION-1.aarch64.rpm
+    ```
+- Uninstall:
+  ```bash
+  sudo dnf remove -y claude-desktop
+  ```
+
+## Building from Source on Fedora
+
+- Prerequisites (installed automatically by the script if missing):
+  ```bash
+  sudo dnf install -y p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils
+  ```
+- Build RPM:
+  ```bash
+  ./build.sh --build rpm
+  ```
+  - Target a specific architecture (for cross-builds in CI):
+    ```bash
+    ./build.sh --build rpm --target-arch amd64   # for x86_64
+    ./build.sh --build rpm --target-arch arm64   # for aarch64
+    ```
+
+## CI for Continuous Fedora Releases
+
+- Tag-based releases: pushing a tag like `vX.Y.Z` triggers the RPM build matrix for Fedora 40 and 41 on x86_64 and aarch64 and attaches artifacts to the GitHub Release.
+  - Create a release tag:
+    ```bash
+    git tag vX.Y.Z
+    git push origin vX.Y.Z
+    ```
+- Nightly auto-release:
+  - A scheduled workflow checks the upstream Windows installer daily using [scripts/get-upstream-version.sh](scripts/get-upstream-version.sh). If a new version is found, it pushes `vX.Y.Z`, which triggers the release workflow automatically.
+- Manual run:
+  - From GitHub Actions, run the “Build and Release RPMs” workflow (workflow_dispatch) to build artifacts without publishing a tag. Artifacts will be available in the Actions run.
