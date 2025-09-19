@@ -53,6 +53,14 @@ jobs:
           set -eux
           rpm -qlp ./*.rpm
 
+      - name: Install RPM in container and validate
+        run: |
+          set -eux
+          dnf -y install ./*.rpm
+          rpm -q claude-desktop
+          rpm -ql claude-desktop | head -n 100
+          dnf -y remove claude-desktop
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

@@ -21,3 +21,5 @@ Thumbs.db
 
 .claude/
 CLAUDE.md
+# Ignore local MCP configs
+.kilocode/

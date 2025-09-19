@@ -42,11 +42,11 @@ SPECS="$TOPDIR/SPECS"
 # Generate SPEC file
 SPEC_FILE="$SPECS/${PACKAGE_NAME}.spec"
 echo "📝 Generating spec file at $SPEC_FILE"
-cat > "$SPEC_FILE" << EOF
-Name:           $PACKAGE_NAME
+cat > "$SPEC_FILE" << 'EOF'
+Name:           claude-desktop
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        $DESCRIPTION
+Summary:        Claude Desktop for Linux
 
 License:        MIT and ASL 2.0
 URL:            https://github.com/aaddrick/claude-desktop-debian
@@ -65,20 +65,21 @@ This package provides the desktop interface for Claude.
 
 %install
 rm -rf %{buildroot}
-install -d %{buildroot}%{_libdir}/$PACKAGE_NAME
+install -d %{buildroot}%{_libdir}/%{name}
 install -d %{buildroot}%{_bindir}
 install -d %{buildroot}%{_datadir}/applications
 
 # Core application
-cp -a %{stagingdir}/app.asar %{buildroot}%{_libdir}/$PACKAGE_NAME/
-cp -a %{stagingdir}/app.asar.unpacked %{buildroot}%{_libdir}/$PACKAGE_NAME/
+cp -a %{stagingdir}/app.asar %{buildroot}%{_libdir}/%{name}/
+cp -a %{stagingdir}/app.asar.unpacked %{buildroot}%{_libdir}/%{name}/
 if [ -d "%{stagingdir}/node_modules" ]; then
-  cp -a %{stagingdir}/node_modules %{buildroot}%{_libdir}/$PACKAGE_NAME/
+  cp -a %{stagingdir}/node_modules %{buildroot}%{_libdir}/%{name}/
 fi
 
 # Launcher script
 cat > %{buildroot}%{_bindir}/claude-desktop << 'EOS'
 #!/bin/bash
+set -e
 LOG_FILE="$HOME/claude-desktop-launcher.log"
 echo "--- Claude Desktop Launcher Start ---" >> "$LOG_FILE"
 echo "Timestamp: $(date)" >> "$LOG_FILE"
@@ -188,13 +189,9 @@ exit 0
 %{_bindir}/claude-desktop
 %{_datadir}/applications/claude-desktop.desktop
 %{_datadir}/icons/hicolor/*/apps/claude-desktop.png
-%{_libdir}/$PACKAGE_NAME/app.asar
-%{_libdir}/$PACKAGE_NAME/app.asar.unpacked
-%{_libdir}/$PACKAGE_NAME/node_modules
-
-%changelog
-* $(date "+%a %b %d %Y") $MAINTAINER - $VERSION-1
-- Initial RPM release
+%{_libdir}/%{name}/app.asar
+%{_libdir}/%{name}/app.asar.unpacked
+%{_libdir}/%{name}/node_modules
 EOF
 
 echo "📦 Building RPM..."
