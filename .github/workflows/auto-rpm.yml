@@ -1,0 +1,66 @@
+name: Nightly Upstream Check and Tag
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-rpm-nightly
+  cancel-in-progress: false
+
+jobs:
+  check_and_tag:
+    name: Detect upstream version and create tag if needed
+    runs-on: ubuntu-latest
+    container: fedora:41
+    steps:
+      - name: Install tooling
+        run: |
+          set -eux
+          dnf -y update
+          dnf -y install git p7zip p7zip-plugins wget
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get upstream version
+        id: upstream
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/get-upstream-version.sh
+          VER="$(scripts/get-upstream-version.sh)"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: tagcheck
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+        with:
+          script: |
+            const tag = `v${process.env.VERSION}`;
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.setOutput('exists', 'true');
+            } catch (e) {
+              core.setOutput('exists', 'false');
+            }
+
+      - name: Create tag v${{ steps.upstream.outputs.version }}
+        if: steps.tagcheck.outputs.exists != 'true'
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.upstream.outputs.version }}"
+          git push origin "v${{ steps.upstream.outputs.version }}"

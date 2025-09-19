@@ -1,6 +1,6 @@
 # Claude Desktop for Linux
 
-This project provides build scripts to run Claude Desktop natively on Linux systems. It repackages the official Windows application for Debian-based distributions, producing either `.deb` packages or AppImages.
+This project provides build scripts to run Claude Desktop natively on Linux systems. It repackages the official Windows application for Debian-based and Fedora distributions, producing `.deb`, `.rpm`, or AppImage artifacts.
 
 **Note:** This is an unofficial build script. For official support, please visit [Anthropic's website](https://www.anthropic.com). For issues with the build script or Linux implementation, please [open an issue](https://github.com/aaddrick/claude-desktop-debian/issues) in this repository.
 
@@ -26,15 +26,15 @@ This project provides build scripts to run Claude Desktop natively on Linux syst
 
 ### Using Pre-built Releases
 
-Download the latest `.deb` or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).
+Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).
 
 ### Building from Source
 
 #### Prerequisites
 
-- Debian-based Linux distribution (Debian, Ubuntu, Linux Mint, MX Linux, etc.)
+- Debian-based Linux distribution (Debian, Ubuntu, Linux Mint, MX Linux, etc.) OR Fedora (40/41)
 - Git
-- Basic build tools (automatically installed by the script)
+- Basic build dependencies (automatically installed by the script using apt or dnf)
 
 #### Build Instructions
 
@@ -49,6 +49,9 @@ cd claude-desktop-debian
 # Build an AppImage
 ./build.sh --build appimage
 
+# Build an .rpm (Fedora)
+./build.sh --build rpm
+
 # Build with custom options
 ./build.sh --build deb --clean no  # Keep intermediate files
 ```
@@ -61,6 +64,15 @@ sudo dpkg -i ./claude-desktop_VERSION_ARCHITECTURE.deb
 
 # If you encounter dependency issues:
 sudo apt --fix-broken install
+```
+
+**For .rpm packages (Fedora):**
+```bash
+# On x86_64
+sudo dnf install -y ./claude-desktop_VERSION-1.x86_64.rpm
+
+# On aarch64 (ARM64)
+sudo dnf install -y ./claude-desktop_VERSION-1.aarch64.rpm
 ```
 
 **For AppImages:**
@@ -105,6 +117,11 @@ sudo dpkg -r claude-desktop
 sudo dpkg -P claude-desktop
 ```
 
+**For .rpm packages (Fedora):**
+```bash
+sudo dnf remove -y claude-desktop
+```
+
 **For AppImages:**
 1. Delete the `.AppImage` file
 2. Remove the `.desktop` file from `~/.local/share/applications/`
@@ -146,6 +163,7 @@ Claude Desktop is an Electron application distributed for Windows. This project:
 3. Replaces Windows-specific native modules with Linux-compatible implementations
 4. Repackages as either:
    - **Debian package**: Standard system package with full integration
+   - **Fedora RPM package**: Standard RPM with full desktop integration (dnf install)
    - **AppImage**: Portable, self-contained executable
 
 ### Build Process
@@ -159,7 +177,8 @@ The build script (`build.sh`) handles:
 
 ### Updating for New Releases
 
-The script automatically detects system architecture and downloads the appropriate version. If Claude Desktop's download URLs change, update the `CLAUDE_DOWNLOAD_URL` variables in `build.sh`.
+- The build script automatically detects system architecture and downloads the appropriate version. If Claude Desktop's download URLs change, update the `CLAUDE_DOWNLOAD_URL` variables in [build.sh](build.sh:1).
+- Continuous delivery: A nightly CI job checks the upstream Windows installer for a new version. When a new version is detected, it creates a new git tag `vX.Y.Z`, which triggers the release workflow to build and publish RPMs for Fedora 40/41 on x86_64 and aarch64.
 
 ## Acknowledgments
 

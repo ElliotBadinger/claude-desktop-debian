@@ -1,38 +1,47 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Architecture Detection ---
-echo -e "\033[1;36m--- Architecture Detection ---\033[0m"
-echo "⚙️ Detecting system architecture..."
-HOST_ARCH=$(dpkg --print-architecture)
-echo "Detected host architecture: $HOST_ARCH"
-cat /etc/os-release && uname -m && dpkg --print-architecture
-
-# Set variables based on detected architecture
-if [ "$HOST_ARCH" = "amd64" ]; then
-    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
-    ARCHITECTURE="amd64"
-    CLAUDE_EXE_FILENAME="Claude-Setup-x64.exe"
-    echo "Configured for amd64 build."
-elif [ "$HOST_ARCH" = "arm64" ]; then
-    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-arm64/Claude-Setup-arm64.exe"
-    ARCHITECTURE="arm64"
-    CLAUDE_EXE_FILENAME="Claude-Setup-arm64.exe"
-    echo "Configured for arm64 build."
+# --- OS and Architecture Detection ---
+echo -e "\033[1;36m--- OS and Architecture Detection ---\033[0m"
+echo "⚙️ Detecting system architecture and distribution..."
+UNAME_M=$(uname -m || true)
+# Try dpkg on Debian-based, else map from uname -m
+if command -v dpkg >/dev/null 2>&1; then
+    HOST_ARCH=$(dpkg --print-architecture || true)
 else
-    echo "❌ Unsupported architecture: $HOST_ARCH. This script currently supports amd64 and arm64."
+    case "$UNAME_M" in
+        x86_64) HOST_ARCH="amd64" ;;
+        aarch64|arm64) HOST_ARCH="arm64" ;;
+        *) HOST_ARCH="unknown" ;;
+    esac
+fi
+if [ -z "${HOST_ARCH:-}" ] || [ "$HOST_ARCH" = "unknown" ]; then
+    echo "❌ Unsupported or unknown architecture: ${UNAME_M}. This script supports amd64 and arm64."
     exit 1
 fi
-echo "Target Architecture (detected): $ARCHITECTURE" # Renamed echo
-echo -e "\033[1;36m--- End Architecture Detection ---\033[0m"
+ARCHITECTURE="$HOST_ARCH"
+PRETTY_NAME=$(grep -E '^PRETTY_NAME=' /etc/os-release | cut -d'"' -f2 || echo "Unknown")
+OS_ID=$(grep -E '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"' || echo "")
+OS_ID_LIKE=$(grep -E '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr -d '"' || echo "")
+echo "Distribution: ${PRETTY_NAME}"
+echo "Host architecture: ${UNAME_M} (normalized: ${ARCHITECTURE})"
 
-
-if [ ! -f "/etc/debian_version" ]; then
-    echo "❌ This script requires a Debian-based Linux distribution"
+# Package manager detection
+PKG_MGR=""
+if echo "$OS_ID $OS_ID_LIKE" | grep -qiE '(debian|ubuntu)'; then
+    PKG_MGR="apt"
+elif echo "$OS_ID $OS_ID_LIKE" | grep -qiE '(fedora|rhel|centos)'; then
+    PKG_MGR="dnf"
+fi
+if [ -z "$PKG_MGR" ]; then
+    echo "❌ Unsupported distribution. Supported: Debian/Ubuntu (apt) and Fedora/RHEL (dnf)."
     exit 1
 fi
+echo "Using package manager: $PKG_MGR"
+echo -e "\033[1;36m--- End OS and Architecture Detection ---\033[0m"
 
-if [ "$EUID" -eq 0 ]; then
+# Allow running as root only in CI
+if [ "$EUID" -eq 0 ] && [ "${GITHUB_ACTIONS:-false}" != "true" ]; then
    echo "❌ This script should not be run using sudo or as the root user."
    echo "   It will prompt for sudo password when needed for specific actions."
    echo "   Please run as a normal user."
@@ -73,39 +82,46 @@ fi # End of if [ -d "$ORIGINAL_HOME/.nvm" ] check
 
 echo "System Information:"
 echo "Distribution: $(grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
-echo "Debian version: $(cat /etc/debian_version)"
-echo "Target Architecture: $ARCHITECTURE" 
+if [ -f "/etc/debian_version" ]; then
+  echo "Debian version: $(cat /etc/debian_version)"
+else
+  echo "Debian version: N/A"
+fi
+echo "Target Architecture: $ARCHITECTURE"
 PACKAGE_NAME="claude-desktop"
 MAINTAINER="Claude Desktop Linux Maintainers"
 DESCRIPTION="Claude Desktop for Linux"
 PROJECT_ROOT="$(pwd)" WORK_DIR="$PROJECT_ROOT/build" APP_STAGING_DIR="$WORK_DIR/electron-app" VERSION="" 
 echo -e "\033[1;36m--- Argument Parsing ---\033[0m"
-BUILD_FORMAT="deb"    CLEANUP_ACTION="yes"  TEST_FLAGS_MODE=false
+BUILD_FORMAT="deb" CLEANUP_ACTION="yes" TEST_FLAGS_MODE=false TARGET_ARCH=""
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
         -b|--build)
-        if [[ -z "$2" || "$2" == -* ]]; then              echo "❌ Error: Argument for $1 is missing" >&2; exit 1
-        fi
+        if [[ -z "$2" || "$2" == -* ]]; then echo "❌ Error: Argument for $1 is missing" >&2; exit 1; fi
         BUILD_FORMAT="$2"
-        shift 2 ;; # Shift past flag and value
+        shift 2 ;;
         -c|--clean)
-        if [[ -z "$2" || "$2" == -* ]]; then              echo "❌ Error: Argument for $1 is missing" >&2; exit 1
-        fi
+        if [[ -z "$2" || "$2" == -* ]]; then echo "❌ Error: Argument for $1 is missing" >&2; exit 1; fi
         CLEANUP_ACTION="$2"
-        shift 2 ;; # Shift past flag and value
+        shift 2 ;;
+        -t|--target-arch)
+        if [[ -z "$2" || "$2" == -* ]]; then echo "❌ Error: Argument for $1 is missing" >&2; exit 1; fi
+        TARGET_ARCH="$2"
+        shift 2 ;;
         --test-flags)
         TEST_FLAGS_MODE=true
-        shift # past argument
-        ;;
+        shift ;;
         -h|--help)
-        echo "Usage: $0 [--build deb|appimage] [--clean yes|no] [--test-flags]"
-        echo "  --build: Specify the build format (deb or appimage). Default: deb"
-        echo "  --clean: Specify whether to clean intermediate build files (yes or no). Default: yes"
+        echo "Usage: $0 [--build deb|rpm|appimage] [--clean yes|no] [--target-arch amd64|arm64] [--test-flags]"
+        echo "  --build: Specify the build format (deb|rpm|appimage). Default: deb"
+        echo "  --clean: Specify whether to clean intermediate build files (yes|no). Default: yes"
+        echo "  --target-arch: Override target architecture for packaging (amd64|arm64). Default: detected host arch"
         echo "  --test-flags: Parse flags, print results, and exit without building."
         exit 0
         ;;
-        *)            echo "❌ Unknown option: $1" >&2
+        *)
+        echo "❌ Unknown option: $1" >&2
         echo "Use -h or --help for usage information." >&2
         exit 1
         ;;
@@ -113,19 +129,28 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate arguments
-BUILD_FORMAT=$(echo "$BUILD_FORMAT" | tr '[:upper:]' '[:lower:]') CLEANUP_ACTION=$(echo "$CLEANUP_ACTION" | tr '[:upper:]' '[:lower:]')
-if [[ "$BUILD_FORMAT" != "deb" && "$BUILD_FORMAT" != "appimage" ]]; then
-    echo "❌ Invalid build format specified: '$BUILD_FORMAT'. Must be 'deb' or 'appimage'." >&2
+BUILD_FORMAT=$(echo "$BUILD_FORMAT" | tr '[:upper:]' '[:lower:]')
+CLEANUP_ACTION=$(echo "$CLEANUP_ACTION" | tr '[:upper:]' '[:lower:]')
+TARGET_ARCH=$(echo "${TARGET_ARCH:-}" | tr '[:upper:]' '[:lower:]')
+if [[ "$BUILD_FORMAT" != "deb" && "$BUILD_FORMAT" != "rpm" && "$BUILD_FORMAT" != "appimage" ]]; then
+    echo "❌ Invalid build format specified: '$BUILD_FORMAT'. Must be 'deb', 'rpm' or 'appimage'." >&2
     exit 1
 fi
 if [[ "$CLEANUP_ACTION" != "yes" && "$CLEANUP_ACTION" != "no" ]]; then
     echo "❌ Invalid cleanup option specified: '$CLEANUP_ACTION'. Must be 'yes' or 'no'." >&2
     exit 1
 fi
+if [[ -z "$TARGET_ARCH" ]]; then
+    TARGET_ARCH="$ARCHITECTURE"
+fi
+if [[ "$TARGET_ARCH" != "amd64" && "$TARGET_ARCH" != "arm64" ]]; then
+    echo "❌ Invalid --target-arch specified: '$TARGET_ARCH'. Must be 'amd64' or 'arm64'." >&2
+    exit 1
+fi
 
 echo "Selected build format: $BUILD_FORMAT"
 echo "Cleanup intermediate files: $CLEANUP_ACTION"
-
+echo "Target packaging architecture: $TARGET_ARCH"
 PERFORM_CLEANUP=false
 if [ "$CLEANUP_ACTION" = "yes" ]; then
     PERFORM_CLEANUP=true
@@ -135,9 +160,9 @@ echo -e "\033[1;36m--- End Argument Parsing ---\033[0m"
 # Exit early if --test-flags mode is enabled
 if [ "$TEST_FLAGS_MODE" = true ]; then
     echo "--- Test Flags Mode Enabled ---"
-    # Target Architecture is implicitly detected now
     echo "Build Format: $BUILD_FORMAT"
     echo "Clean Action: $CLEANUP_ACTION"
+    echo "Target Arch: $TARGET_ARCH"
     echo "Exiting without build."
     exit 0
 fi
@@ -155,12 +180,15 @@ check_command() {
 
 echo "Checking dependencies..."
 DEPS_TO_INSTALL=""
-COMMON_DEPS="p7zip wget wrestool icotool convert"
+COMMON_DEPS="7z wget wrestool icotool convert"
 DEB_DEPS="dpkg-deb"
-APPIMAGE_DEPS="" 
+RPM_DEPS="rpmbuild update-desktop-database"
+APPIMAGE_DEPS=""
 ALL_DEPS_TO_CHECK="$COMMON_DEPS"
 if [ "$BUILD_FORMAT" = "deb" ]; then
     ALL_DEPS_TO_CHECK="$ALL_DEPS_TO_CHECK $DEB_DEPS"
+elif [ "$BUILD_FORMAT" = "rpm" ]; then
+    ALL_DEPS_TO_CHECK="$ALL_DEPS_TO_CHECK $RPM_DEPS"
 elif [ "$BUILD_FORMAT" = "appimage" ]; then
     ALL_DEPS_TO_CHECK="$ALL_DEPS_TO_CHECK $APPIMAGE_DEPS"
 fi
@@ -168,33 +196,57 @@ fi
 for cmd in $ALL_DEPS_TO_CHECK; do
     if ! check_command "$cmd"; then
         case "$cmd" in
-            "p7zip") DEPS_TO_INSTALL="$DEPS_TO_INSTALL p7zip-full" ;;
+            "7z")
+                if [ "$PKG_MGR" = "apt" ]; then
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL p7zip-full"
+                else
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL p7zip p7zip-plugins"
+                fi
+                ;;
             "wget") DEPS_TO_INSTALL="$DEPS_TO_INSTALL wget" ;;
             "wrestool"|"icotool") DEPS_TO_INSTALL="$DEPS_TO_INSTALL icoutils" ;;
-            "convert") DEPS_TO_INSTALL="$DEPS_TO_INSTALL imagemagick" ;;
+            "convert")
+                if [ "$PKG_MGR" = "apt" ]; then
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL imagemagick"
+                else
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL ImageMagick"
+                fi
+                ;;
             "dpkg-deb") DEPS_TO_INSTALL="$DEPS_TO_INSTALL dpkg-dev" ;;
+            "rpmbuild")
+                if [ "$PKG_MGR" = "apt" ]; then
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL rpm"
+                else
+                    DEPS_TO_INSTALL="$DEPS_TO_INSTALL rpm-build"
+                fi
+                ;;
+            "update-desktop-database") DEPS_TO_INSTALL="$DEPS_TO_INSTALL desktop-file-utils" ;;
         esac
     fi
 done
 
 if [ -n "$DEPS_TO_INSTALL" ]; then
     echo "System dependencies needed: $DEPS_TO_INSTALL"
-    echo "Attempting to install using sudo..."
+    SUDO_CMD="sudo"
+    if [ "$EUID" -eq 0 ] || [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+        SUDO_CMD=""
+    fi
+    echo "Attempting to install using ${SUDO_CMD:-sudo}..."
+    if [ -n "$SUDO_CMD" ]; then
         if ! sudo -v; then
-        echo "❌ Failed to validate sudo credentials. Please ensure you can run sudo."
-        exit 1
+            echo "❌ Failed to validate sudo credentials. Please ensure you can run sudo."
+            exit 1
+        fi
     fi
-        if ! sudo apt update; then
-        echo "❌ Failed to run 'sudo apt update'."
-        exit 1
+    if [ "$PKG_MGR" = "apt" ]; then
+        $SUDO_CMD apt update
+        # shellcheck disable=SC2086
+        $SUDO_CMD apt install -y $DEPS_TO_INSTALL
+    else
+        # shellcheck disable=SC2086
+        $SUDO_CMD dnf -y install $DEPS_TO_INSTALL
     fi
-    # Here on purpose no "" to expand the 'list', thus
-    # shellcheck disable=SC2086
-    if ! sudo apt install -y $DEPS_TO_INSTALL; then
-         echo "❌ Failed to install dependencies using 'sudo apt install'."
-         exit 1
-    fi
-    echo "✓ System dependencies installed successfully via sudo."
+    echo "✓ System dependencies installed successfully."
 fi
 
 rm -rf "$WORK_DIR"
@@ -300,7 +352,8 @@ fi
 
 if [ "$INSTALL_NEEDED" = true ]; then
     echo "Installing Electron and Asar locally into $WORK_DIR..."
-        if ! npm install --no-save electron @electron/asar; then
+    if [ "$TARGET_ARCH" = "amd64" ]; then E_TARGET_ARCH="x64"; else E_TARGET_ARCH="arm64"; fi
+    if ! npm_config_arch="$E_TARGET_ARCH" ELECTRON_ARCH="$E_TARGET_ARCH" electron_config_arch="$E_TARGET_ARCH" npm install --no-save electron @electron/asar; then
         echo "❌ Failed to install Electron and/or Asar locally."
         cd "$PROJECT_ROOT"
         exit 1
@@ -337,6 +390,16 @@ fi
 echo "Using Electron module path: $CHOSEN_ELECTRON_MODULE_PATH"
 echo "Using asar executable: $ASAR_EXEC"
 
+# Configure Claude download URL for target packaging architecture
+if [ "$TARGET_ARCH" = "amd64" ]; then
+    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+    CLAUDE_EXE_FILENAME="Claude-Setup-x64.exe"
+else
+    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-arm64/Claude-Setup-arm64.exe"
+    CLAUDE_EXE_FILENAME="Claude-Setup-arm64.exe"
+fi
+echo "Target architecture for packaging: $TARGET_ARCH"
+echo "Using Claude download URL: $CLAUDE_DOWNLOAD_URL"
 
 echo -e "\033[1;36m--- Download the latest Claude executable ---\033[0m"
 echo "📥 Downloading Claude Desktop installer for $ARCHITECTURE..."
@@ -368,6 +431,9 @@ if [ -z "$VERSION" ]; then
     cd "$PROJECT_ROOT" && exit 1
 fi
 echo "✓ Detected Claude version: $VERSION"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+fi
 
 if ! 7z x -y "$NUPKG_PATH_RELATIVE"; then     echo "❌ Failed to extract nupkg"
     cd "$PROJECT_ROOT" && exit 1
@@ -503,7 +569,7 @@ echo "✓ app.asar processed and staged in $APP_STAGING_DIR"
 cd "$PROJECT_ROOT"
 
 echo -e "\033[1;36m--- Call Packaging Script ---\033[0m"
-FINAL_OUTPUT_PATH="" FINAL_DESKTOP_FILE_PATH="" 
+FINAL_OUTPUT_PATH="" FINAL_DESKTOP_FILE_PATH=""
 if [ "$BUILD_FORMAT" = "deb" ]; then
     echo "📦 Calling Debian packaging script for $ARCHITECTURE..."
     chmod +x scripts/build-deb-package.sh
@@ -524,6 +590,26 @@ if [ "$BUILD_FORMAT" = "deb" ]; then
         FINAL_OUTPUT_PATH="Not Found"
     fi
 
+elif [ "$BUILD_FORMAT" = "rpm" ]; then
+    echo "📦 Calling RPM packaging script for $TARGET_ARCH..."
+    chmod +x scripts/build-rpm-package.sh
+    if ! scripts/build-rpm-package.sh \
+        "$VERSION" "$TARGET_ARCH" "$WORK_DIR" "$APP_STAGING_DIR" \
+        "$PACKAGE_NAME" "$MAINTAINER" "$DESCRIPTION"; then
+        echo "❌ RPM packaging script failed."
+        exit 1
+    fi
+    RPM_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}-${VERSION}-1.*.rpm" | head -n 1)
+    echo "✓ RPM Build complete!"
+    if [ -n "$RPM_FILE" ] && [ -f "$RPM_FILE" ]; then
+        FINAL_OUTPUT_PATH="./$(basename "$RPM_FILE")"
+        mv "$RPM_FILE" "$FINAL_OUTPUT_PATH"
+        echo "Package created at: $FINAL_OUTPUT_PATH"
+    else
+        echo "Warning: Could not determine final .rpm file path from $WORK_DIR for ${TARGET_ARCH}."
+        FINAL_OUTPUT_PATH="Not Found"
+    fi
+
 elif [ "$BUILD_FORMAT" = "appimage" ]; then
     echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
     chmod +x scripts/build-appimage.sh
@@ -535,7 +621,7 @@ elif [ "$BUILD_FORMAT" = "appimage" ]; then
     APPIMAGE_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}-${VERSION}-${ARCHITECTURE}.AppImage" | head -n 1)
     echo "✓ AppImage Build complete!"
     if [ -n "$APPIMAGE_FILE" ] && [ -f "$APPIMAGE_FILE" ]; then
-        FINAL_OUTPUT_PATH="./$(basename "$APPIMAGE_FILE")" 
+        FINAL_OUTPUT_PATH="./$(basename "$APPIMAGE_FILE")"
         mv "$APPIMAGE_FILE" "$FINAL_OUTPUT_PATH"
         echo "Package created at: $FINAL_OUTPUT_PATH"
 
@@ -587,6 +673,13 @@ if [ "$BUILD_FORMAT" = "deb" ]; then
         echo -e "   (or \`sudo dpkg -i $FINAL_OUTPUT_PATH\`)"
     else
         echo -e "⚠️ Debian package file not found. Cannot provide installation instructions."
+    fi
+elif [ "$BUILD_FORMAT" = "rpm" ]; then
+    if [ "$FINAL_OUTPUT_PATH" != "Not Found" ] && [ -e "$FINAL_OUTPUT_PATH" ]; then
+        echo -e "📦 To install the RPM package on Fedora, run:"
+        echo -e "   \033[1;32msudo dnf install -y $FINAL_OUTPUT_PATH\033[0m"
+    else
+        echo -e "⚠️ RPM package file not found. Cannot provide installation instructions."
     fi
 elif [ "$BUILD_FORMAT" = "appimage" ]; then
     if [ "$FINAL_OUTPUT_PATH" != "Not Found" ] && [ -e "$FINAL_OUTPUT_PATH" ]; then

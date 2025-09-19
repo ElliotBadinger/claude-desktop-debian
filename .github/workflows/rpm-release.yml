@@ -1,0 +1,69 @@
+name: Build and Release RPMs
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rpm-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Fedora ${{ matrix.fedora }} • ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    container: fedora:${{ matrix.fedora }}
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora: [40, 41]
+        arch: [x86_64, aarch64]
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -eux
+          dnf -y update
+          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build RPM
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then TARGET_ARCH="amd64"; else TARGET_ARCH="arm64"; fi
+          chmod +x ./build.sh
+          ./build.sh --build rpm --clean yes --target-arch "$TARGET_ARCH"
+
+      - name: rpmlint
+        run: |
+          set -eux
+          rpmlint -v ./*.rpm || true
+
+      - name: List RPM contents
+        run: |
+          set -eux
+          rpm -qlp ./*.rpm
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-desktop-${{ matrix.fedora }}-${{ matrix.arch }}
+          path: "*.rpm"
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.rpm"
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
