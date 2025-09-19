@@ -16,13 +16,24 @@ concurrency:
 jobs:
   build:
     name: Fedora ${{ matrix.fedora }} • ${{ matrix.arch }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     container: fedora:${{ matrix.fedora }}
     strategy:
       fail-fast: false
       matrix:
-        fedora: [40, 41]
-        arch: [x86_64, aarch64]
+        include:
+          - fedora: 40
+            arch: x86_64
+            runner: ubuntu-latest
+          - fedora: 41
+            arch: x86_64
+            runner: ubuntu-latest
+          - fedora: 40
+            arch: aarch64
+            runner: ubuntu-22.04-arm64
+          - fedora: 41
+            arch: aarch64
+            runner: ubuntu-22.04-arm64
     steps:
       - name: Install build dependencies
         run: |

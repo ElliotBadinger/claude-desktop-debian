@@ -50,7 +50,7 @@ Summary:        Claude Desktop for Linux
 
 License:        MIT and ASL 2.0
 URL:            https://github.com/aaddrick/claude-desktop-debian
-BuildArch:      %{rpmarch}
+ExclusiveArch:  x86_64 aarch64
 Requires:       hicolor-icon-theme, desktop-file-utils
 
 %description
