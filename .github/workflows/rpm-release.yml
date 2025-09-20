@@ -38,11 +38,13 @@ jobs:
       - name: Install build dependencies
         run: |
           set -eux
-          dnf -y update
+          # Harden DNF for reliability and speed
+          echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
+          dnf -y --refresh update
           dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 0
 
@@ -73,14 +75,14 @@ jobs:
           dnf -y remove claude-desktop
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: claude-desktop-${{ matrix.fedora }}-${{ matrix.arch }}
           path: "*.rpm"
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
         with:
           files: "*.rpm"
           fail_on_unmatched_files: true
