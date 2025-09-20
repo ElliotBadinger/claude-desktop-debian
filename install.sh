@@ -227,8 +227,15 @@ perform_install() {
   local url=""
   if [[ "$mgr" == "apt" ]]; then
     url="$(echo "$json" | json_find_asset_url "claude-desktop_.*_${arch}\\.deb")"
-    if [[ -z "$url" ]]; then url="$(echo "$json" | json_find_asset_url "\\.deb"); fi
-    if [[ -z "$url" ]]; then echo "No .deb asset found"; return 1; fi
+    if [[ -z "$url" ]]; then url="$(echo "$json" | json_find_asset_url "\\.deb$")"; fi
+    if [[ -z "$url" ]]; then
+      log "No .deb asset found; falling back to AppImage"
+      # AppImage fallback for apt path
+      url="$(echo "$json" | json_find_asset_url "\\.AppImage$")"
+      if [[ -z "$url" ]]; then echo "No AppImage asset found"; return 1; fi
+      install_appimage "$url"
+      return 0
+    fi
     install_deb "$url"
     return 0
   fi
@@ -237,13 +244,20 @@ perform_install() {
     local rpm_arch
     if [[ "$arch" == "amd64" ]]; then rpm_arch="x86_64"; else rpm_arch="aarch64"; fi
     url="$(echo "$json" | json_find_asset_url "claude-desktop-.*\\.fc${fv}\\.${rpm_arch}\\.rpm")"
-    if [[ -z "$url" ]]; then url="$(echo "$json" | json_find_asset_url "\\.${rpm_arch}\\.rpm")"; fi
-    if [[ -z "$url" ]]; then echo "No .rpm asset found"; return 1; fi
+    if [[ -z "$url" ]]; then url="$(echo "$json" | json_find_asset_url "\\.${rpm_arch}\\.rpm$")"; fi
+    if [[ -z "$url" ]]; then
+      log "No .rpm asset found; falling back to AppImage"
+      # AppImage fallback for dnf path
+      url="$(echo "$json" | json_find_asset_url "\\.AppImage$")"
+      if [[ -z "$url" ]]; then echo "No AppImage asset found"; return 1; fi
+      install_appimage "$url"
+      return 0
+    fi
     install_rpm "$url"
     return 0
   fi
   # AppImage fallback
-  url="$(echo "$json" | json_find_asset_url "\\.AppImage(\\.zsync)?$")"
+  url="$(echo "$json" | json_find_asset_url "\\.AppImage$")"
   if [[ -z "$url" ]]; then echo "No AppImage asset found"; return 1; fi
   install_appimage "$url"
 }
