@@ -15,18 +15,18 @@ on:
 
 jobs:
   build:
-    # Use an ARM runner
-    runs-on: ubuntu-22.04-arm # Or your self-hosted ARM runner label
+    # Use an ARM64 runner
+    runs-on: ubuntu-22.04-arm64
 
     steps:
     # Checkout code is needed within the reusable workflow itself
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install FUSE for AppImageTool
+    - name: Install prerequisites
       run: |
         sudo apt-get update
-        sudo apt-get install -y libfuse2
+        sudo apt-get install -y libfuse2 icoutils imagemagick p7zip-full wget
 
     - name: Make build script executable
       run: chmod +x ./build.sh

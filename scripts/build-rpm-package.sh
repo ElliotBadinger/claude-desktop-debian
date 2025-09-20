@@ -39,9 +39,25 @@ TOPDIR="$WORK_DIR/rpm"
 mkdir -p "$TOPDIR/BUILD" "$TOPDIR/RPMS" "$TOPDIR/SOURCES" "$TOPDIR/SPECS" "$TOPDIR/SRPMS" "$TOPDIR/BUILDROOT"
 SPECS="$TOPDIR/SPECS"
 
+# Logging defaults (avoid unbound variable issues and capture rpmbuild logs)
+LOG_DIR="${LOG_DIR:-"$WORK_DIR/logs"}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="${LOG_FILE:-"$LOG_DIR/rpmbuild.log"}"
+
+# Reproducible builds: set SOURCE_DATE_EPOCH if not provided
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+  if command -v git >/dev/null 2>&1; then
+    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+  else
+    export SOURCE_DATE_EPOCH="$(date -u +%s)"
+  fi
+fi
+
 # Generate SPEC file
 SPEC_FILE="$SPECS/${PACKAGE_NAME}.spec"
 echo "📝 Generating spec file at $SPEC_FILE"
+# Disable nounset while writing heredoc to avoid accidental expansion errors if any variable-like tokens slip through
+set +u
 cat > "$SPEC_FILE" << 'EOF'
 Name:           claude-desktop
 Version:        %{version}
@@ -80,7 +96,7 @@ fi
 cat > %{buildroot}%{_bindir}/claude-desktop << 'EOS'
 #!/bin/bash
 set -e
-LOG_FILE="$HOME/claude-desktop-launcher.log"
+LOG_FILE="${LOG_FILE:-$HOME/claude-desktop-launcher.log}"
 echo "--- Claude Desktop Launcher Start ---" >> "$LOG_FILE"
 echo "Timestamp: $(date)" >> "$LOG_FILE"
 echo "Arguments: $@" >> "$LOG_FILE"
@@ -100,7 +116,7 @@ if [ -f "$LOCAL_ELECTRON_PATH_LIB64" ]; then
   ELECTRON_EXEC="$LOCAL_ELECTRON_PATH_LIB64"
 elif [ -f "$LOCAL_ELECTRON_PATH_LIB" ]; then
   ELECTRON_EXEC="$LOCAL_ELECTRON_PATH_LIB"
-elif command -v electron &> /dev/null; then
+elif command -v electron > /dev/null; then
   ELECTRON_EXEC="$(command -v electron)"
 else
   echo "Error: Electron executable not found (checked $LOCAL_ELECTRON_PATH_LIB64 and $LOCAL_ELECTRON_PATH_LIB)." >> "$LOG_FILE"
@@ -192,17 +208,26 @@ exit 0
 %{_libdir}/%{name}/app.asar
 %{_libdir}/%{name}/app.asar.unpacked
 %{_libdir}/%{name}/node_modules
+
+%changelog
+* Sat Sep 20 2025 Claude Desktop Linux Maintainers - %{version}-1
+- Initial package build for Fedora
+
 EOF
+# Re-enable nounset after heredoc
+set -u
 
 echo "📦 Building RPM..."
+# Pipe to tee while preserving failure with 'set -o pipefail' at script top
 if ! rpmbuild -bb "$SPEC_FILE" \
     --define "_topdir $TOPDIR" \
     --define "version $VERSION" \
     --define "rpmarch $RPM_ARCH" \
     --define "stagingdir $APP_STAGING_DIR" \
     --define "workdir $WORK_DIR" \
-    --target "$RPM_ARCH"; then
-  echo "❌ rpmbuild failed"
+    --define "_source_date_epoch $SOURCE_DATE_EPOCH" \
+    --target "$RPM_ARCH" 2>&1 | tee "$LOG_FILE"; then
+  echo "❌ rpmbuild failed. See log: $LOG_FILE"
   exit 1
 fi
 

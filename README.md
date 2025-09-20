@@ -32,7 +32,7 @@ Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](http
 
 #### Prerequisites
 
-- Debian-based Linux distribution (Debian, Ubuntu, Linux Mint, MX Linux, etc.) OR Fedora (40/41)
+- Debian-based Linux distribution (Debian, Ubuntu, Linux Mint, MX Linux, etc.) OR Fedora (40/41/42)
 - Git
 - Basic build dependencies (automatically installed by the script using apt or dnf)
 
@@ -178,7 +178,7 @@ The build script (`build.sh`) handles:
 ### Updating for New Releases
 
 - The build script automatically detects system architecture and downloads the appropriate version. If Claude Desktop's download URLs change, update the `CLAUDE_DOWNLOAD_URL` variables in [build.sh](build.sh:1).
-- Continuous delivery: A nightly CI job checks the upstream Windows installer for a new version. When a new version is detected, it creates a new git tag `vX.Y.Z`, which triggers the release workflow to build and publish RPMs for Fedora 40/41 on x86_64 and aarch64.
+- Continuous delivery: A nightly CI job checks the upstream Windows installer for a new version. When a new version is detected, it creates a new git tag `vX.Y.Z`, which triggers the release workflow to build and publish RPMs for Fedora 40/41 (CI) on x86_64 and aarch64. Local builds are validated on Fedora 42 as well.
 
 ## Acknowledgments
 
@@ -247,3 +247,15 @@ Contributions are welcome! By submitting a contribution, you agree to license it
   - A scheduled workflow checks the upstream Windows installer daily using [scripts/get-upstream-version.sh](scripts/get-upstream-version.sh). If a new version is found, it pushes `vX.Y.Z`, which triggers the release workflow automatically.
 - Manual run:
   - From GitHub Actions, run the “Build and Release RPMs” workflow (workflow_dispatch) to build artifacts without publishing a tag. Artifacts will be available in the Actions run.
+
+### CI runner prerequisites and notes
+
+- Ubuntu runner prerequisites (installed by workflows):
+  - `libfuse2` (AppImage runtime)
+  - `icoutils` (wrestool/icotool for icon extraction)
+  - `imagemagick` (convert utility)
+  - `p7zip-full`, `wget`
+- Fedora container steps are hardened with DNF fastestmirror, retries, and refresh for reliability.
+- The scheduled “Check Claude Desktop Version” workflow requires a Personal Access Token:
+  - Create a PAT with `repo` and `workflow` scopes and set it as the `GH_PAT` repository secret.
+  - When `GH_PAT` is not configured, the workflow will skip tag and release publication gracefully while still detecting updates.

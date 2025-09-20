@@ -15,13 +15,14 @@ permissions:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    env:
+      GH_PAT: ${{ secrets.GH_PAT }}
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0 # Need full history for tags
-        token: ${{ secrets.GH_PAT }} # PAT required for pushing tags
+        fetch-depth: 0 # Use default GITHUB_TOKEN for checkout
     
     - name: Set up environment
       run: |
@@ -102,20 +103,12 @@ jobs:
         fi
     
     - name: Update version variable and create tag
-      if: steps.check_update.outputs.update_needed == 'true'
+      if: steps.check_update.outputs.update_needed == 'true' && env.GH_PAT != ''
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         CLAUDE_VERSION="${{ steps.check_version.outputs.claude_version }}"
         NEW_TAG="${{ steps.check_update.outputs.new_tag }}"
-        
-        # Check if we have a PAT
-        if [ -z "$GH_TOKEN" ]; then
-          echo "❌ Error: GH_PAT secret is not configured"
-          echo "This workflow requires a Personal Access Token to update repository variables"
-          echo "Please create a PAT with 'repo' and 'workflow' scopes and add it as GH_PAT secret"
-          exit 1
-        fi
         
         echo "Updating CLAUDE_DESKTOP_VERSION variable to $CLAUDE_VERSION"
         gh variable set CLAUDE_DESKTOP_VERSION --body "$CLAUDE_VERSION"
@@ -134,8 +127,15 @@ jobs:
         
         echo "Successfully created tag $NEW_TAG"
     
+    - name: GH_PAT not configured - skipping tag and release
+      if: steps.check_update.outputs.update_needed == 'true' && env.GH_PAT == ''
+      run: |
+        echo "GH_PAT is not configured; skipping tag and release for detected Claude version: ${{ steps.check_version.outputs.claude_version }}"
+        echo "This workflow still detected updates but cannot publish without GH_PAT."
+    
+    
     - name: Create release
-      if: steps.check_update.outputs.update_needed == 'true'
+      if: steps.check_update.outputs.update_needed == 'true' && env.GH_PAT != ''
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |

@@ -227,21 +227,37 @@ done
 
 if [ -n "$DEPS_TO_INSTALL" ]; then
     echo "System dependencies needed: $DEPS_TO_INSTALL"
-    SUDO_CMD="sudo"
-    if [ "$EUID" -eq 0 ] || [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+
+    # Determine elevation method
+    if [ "$EUID" -eq 0 ]; then
+        SUDO_CMD=""
+    elif command -v sudo >/dev/null 2>&1; then
+        if sudo -n true 2>/dev/null; then
+            SUDO_CMD="sudo -n"
+        else
+            SUDO_CMD="sudo"
+        fi
+    else
         SUDO_CMD=""
     fi
-    echo "Attempting to install using ${SUDO_CMD:-sudo}..."
-    if [ -n "$SUDO_CMD" ]; then
-        if ! sudo -v; then
-            echo "❌ Failed to validate sudo credentials. Please ensure you can run sudo."
-            exit 1
+
+    if [ -z "$SUDO_CMD" ] && [ "$EUID" -ne 0 ]; then
+        echo "❌ Cannot install system dependencies without root privileges."
+        echo "Please run the following commands manually and re-run this script:"
+        if [ "$PKG_MGR" = "apt" ]; then
+            echo "    sudo apt-get update"
+            echo "    sudo apt-get install -y $DEPS_TO_INSTALL"
+        else
+            echo "    sudo dnf -y install $DEPS_TO_INSTALL"
         fi
+        exit 1
     fi
+
+    echo "Attempting to install using ${SUDO_CMD:-(no sudo, running as root)}..."
     if [ "$PKG_MGR" = "apt" ]; then
-        $SUDO_CMD apt update
+        $SUDO_CMD apt-get update
         # shellcheck disable=SC2086
-        $SUDO_CMD apt install -y $DEPS_TO_INSTALL
+        $SUDO_CMD apt-get install -y $DEPS_TO_INSTALL
     else
         # shellcheck disable=SC2086
         $SUDO_CMD dnf -y install $DEPS_TO_INSTALL
@@ -402,7 +418,7 @@ echo "Target architecture for packaging: $TARGET_ARCH"
 echo "Using Claude download URL: $CLAUDE_DOWNLOAD_URL"
 
 echo -e "\033[1;36m--- Download the latest Claude executable ---\033[0m"
-echo "📥 Downloading Claude Desktop installer for $ARCHITECTURE..."
+echo "📥 Downloading Claude Desktop installer for target architecture: $TARGET_ARCH..."
 CLAUDE_EXE_PATH="$WORK_DIR/$CLAUDE_EXE_FILENAME"
 if ! wget -O "$CLAUDE_EXE_PATH" "$CLAUDE_DOWNLOAD_URL"; then
     echo "❌ Failed to download Claude Desktop installer from $CLAUDE_DOWNLOAD_URL"
@@ -413,7 +429,9 @@ echo "✓ Download complete: $CLAUDE_EXE_FILENAME"
 echo "📦 Extracting resources from $CLAUDE_EXE_FILENAME into separate directory..."
 CLAUDE_EXTRACT_DIR="$WORK_DIR/claude-extract"
 mkdir -p "$CLAUDE_EXTRACT_DIR"
-if ! 7z x -y "$CLAUDE_EXE_PATH" -o"$CLAUDE_EXTRACT_DIR"; then     echo "❌ Failed to extract installer"
+rm -rf "$CLAUDE_EXTRACT_DIR"/*
+if ! 7z x -y "$CLAUDE_EXE_PATH" -o"$CLAUDE_EXTRACT_DIR"; then
+    echo "❌ Failed to extract installer"
     cd "$PROJECT_ROOT" && exit 1
 fi
 
@@ -423,7 +441,8 @@ if [ -z "$NUPKG_PATH_RELATIVE" ]; then
     echo "❌ Could not find AnthropicClaude nupkg file in $CLAUDE_EXTRACT_DIR"
     cd "$PROJECT_ROOT" && exit 1
 fi
-NUPKG_PATH="$CLAUDE_EXTRACT_DIR/$NUPKG_PATH_RELATIVE" echo "Found nupkg: $NUPKG_PATH_RELATIVE (in $CLAUDE_EXTRACT_DIR)"
+NUPKG_PATH="$CLAUDE_EXTRACT_DIR/$NUPKG_PATH_RELATIVE"
+echo "Found nupkg: $NUPKG_PATH_RELATIVE (in $CLAUDE_EXTRACT_DIR)"
 
 VERSION=$(echo "$NUPKG_PATH_RELATIVE" | LC_ALL=C grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full|-arm64-full)')
 if [ -z "$VERSION" ]; then
@@ -477,7 +496,7 @@ cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/"*-*.json app.asar.contents/resource
 
 echo "##############################################################"
 echo "Removing "'!'" from 'if ("'!'"isWindows && isMainWindow) return null;'"
-echo "detection flag to to enable title bar"
+echo "detection flag to enable title bar"
 
 echo "Current working directory: '$PWD'"
 
