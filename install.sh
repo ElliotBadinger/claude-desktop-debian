@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OWNER="${CLAUDE_OWNER:-aaddrick}"
+OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
 RAW_BASE="https://raw.githubusercontent.com/${OWNER}/${REPO}/main"
 API_BASE="https://api.github.com/repos/${OWNER}/${REPO}"
+ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-aaddrick}"
 
 usage() { cat <<'EOF'
 Usage: install.sh [--update-only] [--no-timer]
@@ -15,6 +16,7 @@ EOF
 
 UPDATE_ONLY=0
 INSTALL_TIMER=1
+DRY_RUN="${CLAUDE_DRY_RUN:-0}"
 while [[ ${1:-} ]]; do
   case "$1" in
     --update-only) UPDATE_ONLY=1 ;;
@@ -32,7 +34,15 @@ need_cmd uname
 is_root() { [[ ${EUID:-$(id -u)} -eq 0 ]]; }
 SUDO=""
 if ! is_root; then
-  if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else echo "This script requires root privileges for package installation."; exit 1; fi
+  if [[ "${DRY_RUN:-0}" = "1" ]]; then
+    # In dry-run mode, do not require sudo/root
+    SUDO=""
+  elif command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+  else
+    echo "This script requires root privileges for package installation."
+    exit 1
+  fi
 fi
 
 log() { echo -e "[install] $*"; }
@@ -59,7 +69,14 @@ detect_pkg_mgr() {
 fedora_version() { . /etc/os-release 2>/dev/null || true; echo "${VERSION_ID:-40}" | cut -d. -f1; }
 
 get_latest_release_json() {
-  curl -fsSL -H "Accept: application/vnd.github+json" "${API_BASE}/releases/latest"
+  # Try primary repo; if it doesn't look like a valid release payload, fall back to ALT_OWNER
+  local primary
+  primary=$(curl -fsSL -H "Accept: application/vnd.github+json" "${API_BASE}/releases/latest" || true)
+  if echo "$primary" | grep -q '"tag_name"'; then
+    echo "$primary"
+    return
+  fi
+  curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${ALT_OWNER}/${REPO}/releases/latest"
 }
 
 json_find_asset_url() {
@@ -76,6 +93,10 @@ download_to() {
 
 install_deb() {
   local url="$1"
+  if [[ "$DRY_RUN" = "1" ]]; then
+    log "DRY RUN: would download and install DEB from $url"
+    return 0
+  fi
   local tmp
   tmp="$(mktemp -d)"
   local file="$tmp/claude.deb"
@@ -86,6 +107,10 @@ install_deb() {
 
 install_rpm() {
   local url="$1"
+  if [[ "$DRY_RUN" = "1" ]]; then
+    log "DRY RUN: would install RPM from $url"
+    return 0
+  fi
   if command -v dnf >/dev/null 2>&1; then
     $SUDO dnf -y install "$url"
   else
@@ -95,6 +120,10 @@ install_rpm() {
 
 install_appimage() {
   local url="$1"
+  if [[ "$DRY_RUN" = "1" ]]; then
+    log "DRY RUN: would install AppImage from $url and create launcher script/desktop entry"
+    return 0
+  fi
   local dir="/opt/claude-desktop"
   local bin="/usr/local/bin/claude-desktop"
   local appimage="$dir/claude-desktop.AppImage"
@@ -122,6 +151,10 @@ DESK
 }
 
 uninstall_pkg() {
+  if [[ "$DRY_RUN" = "1" ]]; then
+    log "DRY RUN: would uninstall existing Claude Desktop from system (deb/rpm/appimage paths)"
+    return 0
+  fi
   if dpkg -s claude-desktop >/dev/null 2>&1; then
     $SUDO apt-get -y remove claude-desktop || $SUDO dpkg -r claude-desktop || true
     $SUDO apt-get -y autoremove || true
@@ -137,11 +170,15 @@ uninstall_pkg() {
 }
 
 setup_auto_update() {
+  if [[ "$DRY_RUN" = "1" ]]; then
+    log "DRY RUN: would install auto-update helper and configure systemd timer or cron"
+    return 0
+  fi
   local updater="/usr/local/bin/claude-desktop-update"
   cat <<'UPD' | $SUDO tee "$updater" >/dev/null
 #!/usr/bin/env bash
 set -euo pipefail
-OWNER="${CLAUDE_OWNER:-aaddrick}"
+OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
 curl -fsSL "https://raw.githubusercontent.com/${OWNER}/${REPO}/main/install.sh" | bash -s -- --update-only --no-timer
 UPD
