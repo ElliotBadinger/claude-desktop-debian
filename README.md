@@ -24,6 +24,38 @@ This project provides build scripts to run Claude Desktop natively on Linux syst
 
 ## Installation
 
+### One-line install (recommended)
+
+Run a single command to install or update Claude Desktop. The script auto-detects your system (Debian/Ubuntu via apt, Fedora/RHEL via dnf/yum, or falls back to AppImage), installs dependencies when needed, updates an existing install (or clean reinstalls if the update fails), and sets up automatic updates (daily systemd timer or cron):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash
+```
+
+Options:
+- Disable auto-update timer:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash -s -- --no-timer
+  ```
+- Update-only (no change if up-to-date; if update fails, the script cleans and reinstalls):
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash -s -- --update-only
+  ```
+
+Auto-update management:
+- systemd (most systems):
+  - Disable: `sudo systemctl disable --now claude-desktop-update.timer`
+  - Run now: `sudo systemctl start claude-desktop-update.service`
+- cron fallback (when systemd not available):
+  - The updater is installed at `/etc/cron.daily/claude-desktop-update`. Remove it to disable.
+
+Using a fork:
+- You can target a fork by setting environment variables before running the installer:
+  ```bash
+  CLAUDE_OWNER="your-github-username-or-org" CLAUDE_REPO="your-fork-repo" \
+  curl -fsSL https://raw.githubusercontent.com/your-github-username-or-org/your-fork-repo/main/install.sh | bash
+  ```
+
 ### Using Pre-built Releases
 
 Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).

@@ -22,7 +22,7 @@ jobs:
     # Checkout code is needed within the reusable workflow itself
     # because the caller only specifies 'uses:', it doesn't run steps before calling.
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
     - name: Install prerequisites
       run: |
@@ -40,7 +40,7 @@ jobs:
 
     # Upload the built artifact for the release job
     - name: Upload AMD64 Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: package-amd64-${{ inputs.artifact_suffix }} # Unique name using suffix
         path: | # Adjust path based on expected output

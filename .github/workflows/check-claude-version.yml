@@ -11,23 +11,31 @@ on:
 
 permissions:
   contents: write  # For creating tags and releases
+  actions: write
 
 jobs:
   check-version:
     runs-on: ubuntu-latest
     env:
       GH_PAT: ${{ secrets.GH_PAT }}
-    
+
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
       with:
         fetch-depth: 0 # Use default GITHUB_TOKEN for checkout
     
     - name: Set up environment
       run: |
+        set -euxo pipefail
         sudo apt-get update
-        sudo apt-get install -y p7zip-full wget
+        sudo apt-get install -y p7zip-full wget || true
+        if ! command -v gh >/dev/null 2>&1; then
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y gh || true
+          fi
+        fi
     
     - name: Download and check Claude version
       id: check_version
@@ -81,9 +89,22 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        set -euo pipefail
         CLAUDE_VERSION="${{ steps.check_version.outputs.claude_version }}"
-        REPO_VERSION="${{ vars.REPO_VERSION }}"
-        STORED_CLAUDE_VERSION="${{ vars.CLAUDE_DESKTOP_VERSION }}"
+        REPO_VERSION="$(gh variable get REPO_VERSION -q .value 2>/dev/null || true)"
+        STORED_CLAUDE_VERSION="$(gh variable get CLAUDE_DESKTOP_VERSION -q .value 2>/dev/null || true)"
+        
+        # Fallbacks if repository variables are not configured
+        if [ -z "${REPO_VERSION:-}" ]; then
+          # Try to infer from latest tag; otherwise default
+          REPO_VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v\([0-9]*\.[0-9]*\.[0-9]*\).*$/\1/' || true)"
+          if [ -z "${REPO_VERSION:-}" ]; then
+            REPO_VERSION="0.0.0"
+          fi
+        fi
+        if [ -z "${STORED_CLAUDE_VERSION:-}" ]; then
+          STORED_CLAUDE_VERSION="0.0.0"
+        fi
         
         echo "Current stored Claude version: $STORED_CLAUDE_VERSION"
         echo "Detected Claude version: $CLAUDE_VERSION"
@@ -107,6 +128,7 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
+        set -euxo pipefail
         CLAUDE_VERSION="${{ steps.check_version.outputs.claude_version }}"
         NEW_TAG="${{ steps.check_update.outputs.new_tag }}"
         
@@ -118,14 +140,24 @@ jobs:
         # Configure git
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
+        git fetch --tags --prune
         
-        # Create annotated tag
-        git tag -a "$NEW_TAG" -m "Update to Claude Desktop $CLAUDE_VERSION"
+        # If tag already exists remotely, exit gracefully to avoid failures on reruns
+        if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+          echo "Tag $NEW_TAG already exists locally; ensuring remote is updated"
+        fi
+        
+        # Create annotated tag if it doesn't already exist
+        if ! git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+          git tag -a "$NEW_TAG" -m "Update to Claude Desktop $CLAUDE_VERSION"
+        fi
         
         # Push the tag
-        git push origin "$NEW_TAG"
+        git push origin "$NEW_TAG" || {
+          echo "Tag push failed (possibly exists); continuing"
+        }
         
-        echo "Successfully created tag $NEW_TAG"
+        echo "Successfully created or ensured tag $NEW_TAG"
     
     - name: GH_PAT not configured - skipping tag and release
       if: steps.check_update.outputs.update_needed == 'true' && env.GH_PAT == ''
