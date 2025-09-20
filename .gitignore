@@ -18,6 +18,11 @@ Thumbs.db
 *.AppImage
 *.desktop
 *.deb
+*.rpm
+
+# Build artifacts and logs
+artifacts/
+install.log
 
 .claude/
 CLAUDE.md
