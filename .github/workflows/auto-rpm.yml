@@ -56,11 +56,18 @@ jobs:
               core.setOutput('exists', 'false');
             }
 
-      - name: Create tag v${{ steps.upstream.outputs.version }}
-        if: steps.tagcheck.outputs.exists != 'true'
+      - name: Verify git workspace
         run: |
           set -eux
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.upstream.outputs.version }}"
-          git push origin "v${{ steps.upstream.outputs.version }}"
+          test -d "$GITHUB_WORKSPACE/.git"
+          git -C "$GITHUB_WORKSPACE" rev-parse --git-dir
+
+      - name: Create tag v${{ steps.upstream.outputs.version }}
+        if: steps.tagcheck.outputs.exists != 'true'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euxo pipefail
+          git -C "$GITHUB_WORKSPACE" config user.name "github-actions[bot]"
+          git -C "$GITHUB_WORKSPACE" config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C "$GITHUB_WORKSPACE" tag "v${{ steps.upstream.outputs.version }}"
+          git -C "$GITHUB_WORKSPACE" push origin "v${{ steps.upstream.outputs.version }}"
