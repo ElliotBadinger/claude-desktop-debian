@@ -58,6 +58,7 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
     # shellcheck source=/etc/os-release
     . /etc/os-release
     local id="${ID:-}"; local like="${ID_LIKE:-}"
@@ -68,6 +69,7 @@ detect_pkg_mgr() {
 }
 
 fedora_version() {
+  # shellcheck disable=SC1091
   # shellcheck source=/etc/os-release
   . /etc/os-release 2>/dev/null || true
   local version="${VERSION_ID:-40}"
