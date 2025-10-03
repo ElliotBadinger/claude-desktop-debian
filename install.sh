@@ -3,7 +3,6 @@ set -euo pipefail
 
 OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
-RAW_BASE="https://raw.githubusercontent.com/${OWNER}/${REPO}/main"
 API_BASE="https://api.github.com/repos/${OWNER}/${REPO}"
 ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-aaddrick}"
 
@@ -48,7 +47,8 @@ fi
 log() { echo -e "[install] $*"; }
 
 detect_arch() {
-  local m="$(uname -m)"
+  local m
+  m="$(uname -m)"
   case "$m" in
     x86_64|amd64) echo "amd64" ;;
     aarch64|arm64) echo "arm64" ;;
@@ -58,6 +58,7 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
+    # shellcheck source=/etc/os-release
     . /etc/os-release
     local id="${ID:-}"; local like="${ID_LIKE:-}"
     if [[ "$id" =~ (debian|ubuntu|linuxmint) ]] || [[ "$like" =~ (debian|ubuntu) ]]; then echo "apt"; return; fi
@@ -66,7 +67,12 @@ detect_pkg_mgr() {
   echo "appimage"
 }
 
-fedora_version() { . /etc/os-release 2>/dev/null || true; echo "${VERSION_ID:-40}" | cut -d. -f1; }
+fedora_version() {
+  # shellcheck source=/etc/os-release
+  . /etc/os-release 2>/dev/null || true
+  local version="${VERSION_ID:-40}"
+  echo "$version" | cut -d. -f1
+}
 
 get_latest_release_json() {
   # Try primary repo; if it doesn't look like a valid release payload, fall back to ALT_OWNER
@@ -128,7 +134,8 @@ install_appimage() {
   local bin="/usr/local/bin/claude-desktop"
   local appimage="$dir/claude-desktop.AppImage"
   $SUDO mkdir -p "$dir"
-  local tmp="$(mktemp -d)"
+  local tmp
+  tmp="$(mktemp -d)"
   download_to "$url" "$tmp/claude.AppImage"
   $SUDO install -m 0755 "$tmp/claude.AppImage" "$appimage"
   rm -rf "$tmp"
@@ -223,7 +230,8 @@ CRON
 perform_install() {
   local mgr="$1"; local arch="$2"
   log "Package manager: $mgr, arch: $arch"
-  local json; json="$(get_latest_release_json)"
+  local json
+  json="$(get_latest_release_json)"
   local url=""
   if [[ "$mgr" == "apt" ]]; then
     url="$(echo "$json" | json_find_asset_url "claude-desktop_.*_${arch}\\.deb")"
@@ -240,7 +248,8 @@ perform_install() {
     return 0
   fi
   if [[ "$mgr" == "dnf" ]]; then
-    local fv; fv="$(fedora_version)"
+    local fv
+    fv="$(fedora_version)"
     local rpm_arch
     if [[ "$arch" == "amd64" ]]; then rpm_arch="x86_64"; else rpm_arch="aarch64"; fi
     url="$(echo "$json" | json_find_asset_url "claude-desktop-.*\\.fc${fv}\\.${rpm_arch}\\.rpm")"
@@ -263,7 +272,8 @@ perform_install() {
 }
 
 try_update_with_fallback() {
-  local mgr="$1"; local arch="$2"
+  local mgr="$1"
+  local arch="$2"
   if perform_install "$mgr" "$arch"; then
     log "Install/Update completed"
     return 0
@@ -274,9 +284,11 @@ try_update_with_fallback() {
 }
 
 main() {
-  local arch; arch="$(detect_arch)"
+  local arch
+  arch="$(detect_arch)"
   if [[ "$arch" == "unsupported" ]]; then echo "Unsupported architecture $(uname -m)"; exit 1; fi
-  local mgr; mgr="$(detect_pkg_mgr)"
+  local mgr
+  mgr="$(detect_pkg_mgr)"
   log "Detected: mgr=$mgr arch=$arch"
 
   if [[ "$UPDATE_ONLY" -eq 1 ]]; then
