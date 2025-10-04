@@ -131,6 +131,24 @@ Model Context Protocol settings are stored in:
 ~/.config/Claude/claude_desktop_config.json
 ```
 
+### MCP Diagnostics & Troubleshooting
+
+Use the MCP diagnostics helper to validate that a configured server starts and completes the JSON-RPC handshake. The script uses the same launcher settings as the desktop app, writes detailed logs under `~/.local/state/claude-desktop/mcp/diagnostics/<server>/`, and will exit with a non-zero status on handshake failures.
+
+```bash
+npm run diagnose:mcp -- --server filesystem --timeout 10000 --retries 2
+```
+
+You can override the configuration file location with `CLAUDE_DESKTOP_CONFIG` if you want to test a custom config. Logs and metadata for each attempt are written to the state directory for easy sharing when filing issues.
+
+When you need to capture a full reproduction bundle (desktop logs, MCP traces, and configuration) run the repro helper. It launches Claude Desktop with `MCP_DEBUG=1`, waits for you to reproduce the issue (or a fixed duration), gathers launcher/config/state logs, and packages everything into a timestamped tarball.
+
+```bash
+scripts/repro-mcp.sh --duration 60
+```
+
+The archive path is printed at the end of the run and can be attached to bug reports.
+
 ### Application Logs
 
 Runtime logs are available at:
