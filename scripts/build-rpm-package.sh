@@ -7,7 +7,9 @@ TARGET_ARCH="$2"  # amd64|arm64
 WORK_DIR="$3" # The top-level build directory (e.g., ./build)
 APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./build/electron-app)
 PACKAGE_NAME="$5"
+# shellcheck disable=SC2034  # Provided for future spec templating
 MAINTAINER="$6"
+# shellcheck disable=SC2034  # Provided for future spec templating
 DESCRIPTION="$7"
 
 echo "--- Starting RPM Package Build ---"
@@ -47,9 +49,11 @@ LOG_FILE="${LOG_FILE:-"$LOG_DIR/rpmbuild.log"}"
 # Reproducible builds: set SOURCE_DATE_EPOCH if not provided
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
   if command -v git >/dev/null 2>&1; then
-    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+    epoch_from_git="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+    export SOURCE_DATE_EPOCH="$epoch_from_git"
   else
-    export SOURCE_DATE_EPOCH="$(date -u +%s)"
+    current_epoch="$(date -u +%s)"
+    export SOURCE_DATE_EPOCH="$current_epoch"
   fi
 fi
 
