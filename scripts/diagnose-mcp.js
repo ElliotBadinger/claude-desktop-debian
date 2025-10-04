@@ -114,6 +114,7 @@ function isMcpManifest(json) {
 
 async function run() {
   await ensureDirectories();
+  log(`Node.js version: ${process.version}`);
   log(`Workspace root: ${workspace}`);
   debug(`State root: ${diagnosticRoot}`);
 
