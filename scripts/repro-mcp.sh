@@ -110,7 +110,12 @@ else
 fi
 
 # Capture process snapshot for reference
-ps -eo pid,ppid,cmd | grep -i "mcp" | grep -v "grep" >"$SESSION_DIR/processes.txt" || true
+if command -v pgrep >/dev/null 2>&1; then
+  pgrep -af "mcp" >"$SESSION_DIR/processes.txt" || true
+else
+  # shellcheck disable=SC2009
+  ps -eo pid,ppid,cmd | grep -i "mcp" | grep -v "grep" >"$SESSION_DIR/processes.txt" || true
+fi
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/Claude"
 collect_file() {
@@ -128,7 +133,8 @@ collect_dir() {
     mkdir -p "$dest"
     shopt -s nullglob dotglob
     for entry in "$src"/*; do
-      local base="$(basename "$entry")"
+      local base
+      base="$(basename "$entry")"
       if [[ "$base" == "$(basename "$SESSION_DIR")" ]]; then
         continue
       fi

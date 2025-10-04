@@ -16,6 +16,8 @@ echo "Target Arch: $TARGET_ARCH"
 echo "Work Directory: $WORK_DIR"
 echo "App Staging Directory: $APP_STAGING_DIR"
 echo "Package Name: $PACKAGE_NAME"
+echo "Maintainer: $MAINTAINER"
+echo "Description: $DESCRIPTION"
 
 # Map target arch to RPM arch
 case "$TARGET_ARCH" in
@@ -47,10 +49,11 @@ LOG_FILE="${LOG_FILE:-"$LOG_DIR/rpmbuild.log"}"
 # Reproducible builds: set SOURCE_DATE_EPOCH if not provided
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
   if command -v git >/dev/null 2>&1; then
-    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
   else
-    export SOURCE_DATE_EPOCH="$(date -u +%s)"
+    SOURCE_DATE_EPOCH="$(date -u +%s)"
   fi
+  export SOURCE_DATE_EPOCH
 fi
 
 # Generate SPEC file
