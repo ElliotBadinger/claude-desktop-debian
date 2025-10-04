@@ -9,6 +9,7 @@ APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./buil
 PACKAGE_NAME="$5"
 MAINTAINER="$6"
 DESCRIPTION="$7"
+: "$MAINTAINER" "$DESCRIPTION"
 
 echo "--- Starting RPM Package Build ---"
 echo "Version: $VERSION"
@@ -47,10 +48,11 @@ LOG_FILE="${LOG_FILE:-"$LOG_DIR/rpmbuild.log"}"
 # Reproducible builds: set SOURCE_DATE_EPOCH if not provided
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
   if command -v git >/dev/null 2>&1; then
-    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
   else
-    export SOURCE_DATE_EPOCH="$(date -u +%s)"
+    SOURCE_DATE_EPOCH="$(date -u +%s)"
   fi
+  export SOURCE_DATE_EPOCH
 fi
 
 # Generate SPEC file
