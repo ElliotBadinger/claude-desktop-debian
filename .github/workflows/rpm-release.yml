@@ -88,3 +88,60 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish DNF repository
+    needs: build
+    runs-on: ubuntu-latest
+    container: fedora:41
+    permissions:
+      contents: write
+    steps:
+      - name: Install publishing dependencies
+        run: |
+          set -eux
+          echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
+          dnf -y --refresh update
+          dnf -y install git createrepo_c rpm-sign rsync gnupg2
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/rpm
+          merge-multiple: true
+
+      - name: Compute repository base URL
+        run: |
+          set -eux
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "DNF_REPO_BASE_URL=https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/rpm" >> "$GITHUB_ENV"
+
+      - name: Prepare DNF repository payload
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/publish-dnf-repo.sh
+          mkdir -p build/dnf public
+          scripts/publish-dnf-repo.sh \
+            --rpm-dir dist/rpm \
+            --repo-dir build/dnf \
+            --repo-url "$DNF_REPO_BASE_URL" \
+            --signing-key-id "$RPM_SIGNING_KEY_ID" \
+            --sync-dest public/rpm
+          touch public/.nojekyll
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: public
+          commit_message: "chore: publish rpm repo for ${{ github.ref_name }}"

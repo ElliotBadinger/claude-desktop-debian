@@ -60,6 +60,46 @@ Using a fork:
 
 Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).
 
+### Hosted DNF Repository (Fedora, RHEL, CentOS Stream)
+
+Automated builds are published to a signed DNF repository hosted on GitHub Pages. Import the signing key and configure the repo once, then use `dnf` for installs and upgrades.
+
+1. **Import the GPG key** (only required once):
+
+   ```bash
+   sudo rpm --import https://aaddrick.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   ```
+
+2. **Create the repo definition** at `/etc/yum.repos.d/claude-desktop.repo`:
+
+   ```bash
+   sudo tee /etc/yum.repos.d/claude-desktop.repo <<'EOF'
+   [claude-desktop]
+   name=Claude Desktop for Fedora/RHEL
+   baseurl=https://aaddrick.github.io/claude-desktop-debian/rpm/$basearch/
+   enabled=1
+   gpgcheck=1
+   repo_gpgcheck=1
+   gpgkey=https://aaddrick.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   metadata_expire=6h
+   EOF
+   ```
+
+3. **Refresh metadata and install**:
+
+   ```bash
+   sudo dnf makecache
+   sudo dnf install -y claude-desktop
+   ```
+
+4. **Upgrading** is handled automatically by `dnf`. To trigger a manual upgrade:
+
+   ```bash
+   sudo dnf upgrade -y claude-desktop
+   ```
+
+The same configuration works on RHEL/CentOS Stream systems using `dnf` or `yum`. Packages and repository metadata are signed; `dnf` will verify both signatures using the imported key.
+
 ### Building from Source
 
 #### Prerequisites
