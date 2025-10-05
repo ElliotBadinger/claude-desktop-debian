@@ -3,7 +3,6 @@ set -euo pipefail
 
 OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
-RAW_BASE="https://raw.githubusercontent.com/${OWNER}/${REPO}/main"
 API_BASE="https://api.github.com/repos/${OWNER}/${REPO}"
 ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-aaddrick}"
 
@@ -48,7 +47,8 @@ fi
 log() { echo -e "[install] $*"; }
 
 detect_arch() {
-  local m="$(uname -m)"
+  local m
+  m="$(uname -m)"
   case "$m" in
     x86_64|amd64) echo "amd64" ;;
     aarch64|arm64) echo "arm64" ;;
@@ -58,6 +58,7 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
     . /etc/os-release
     local id="${ID:-}"; local like="${ID_LIKE:-}"
     if [[ "$id" =~ (debian|ubuntu|linuxmint) ]] || [[ "$like" =~ (debian|ubuntu) ]]; then echo "apt"; return; fi
@@ -66,7 +67,11 @@ detect_pkg_mgr() {
   echo "appimage"
 }
 
-fedora_version() { . /etc/os-release 2>/dev/null || true; echo "${VERSION_ID:-40}" | cut -d. -f1; }
+fedora_version() {
+  # shellcheck disable=SC1091
+  . /etc/os-release 2>/dev/null || true
+  echo "${VERSION_ID:-40}" | cut -d. -f1
+}
 
 get_latest_release_json() {
   # Try primary repo; if it doesn't look like a valid release payload, fall back to ALT_OWNER
@@ -128,7 +133,8 @@ install_appimage() {
   local bin="/usr/local/bin/claude-desktop"
   local appimage="$dir/claude-desktop.AppImage"
   $SUDO mkdir -p "$dir"
-  local tmp="$(mktemp -d)"
+  local tmp
+  tmp="$(mktemp -d)"
   download_to "$url" "$tmp/claude.AppImage"
   $SUDO install -m 0755 "$tmp/claude.AppImage" "$appimage"
   rm -rf "$tmp"

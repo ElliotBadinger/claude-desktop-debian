@@ -15,25 +15,13 @@ concurrency:
 
 jobs:
   build:
-    name: Fedora ${{ matrix.fedora }} • ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    name: Fedora ${{ matrix.fedora }}
+    runs-on: ubuntu-latest
     container: fedora:${{ matrix.fedora }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - fedora: 40
-            arch: x86_64
-            runner: ubuntu-latest
-          - fedora: 41
-            arch: x86_64
-            runner: ubuntu-latest
-          - fedora: 40
-            arch: aarch64
-            runner: ubuntu-22.04-arm64
-          - fedora: 41
-            arch: aarch64
-            runner: ubuntu-22.04-arm64
+        fedora: [40, 41]
     steps:
       - name: Install build dependencies
         run: |
@@ -41,35 +29,57 @@ jobs:
           # Harden DNF for reliability and speed
           echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
           dnf -y --refresh update
-          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync
+          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync rpm-sign gnupg2
 
       - name: Checkout
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 0
 
-      - name: Build RPM
+      - name: Build and sign RPMs
         shell: bash
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
         run: |
           set -euxo pipefail
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then TARGET_ARCH="amd64"; else TARGET_ARCH="arm64"; fi
-          chmod +x ./build.sh
-          ./build.sh --build rpm --clean yes --target-arch "$TARGET_ARCH"
+          mkdir -p dist/rpm
+          chmod +x scripts/build-rpm.sh
+          VERSION_ARGS=()
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            VERSION_ARGS=(--version "$VERSION")
+          fi
+          scripts/build-rpm.sh \
+            "${VERSION_ARGS[@]}" \
+            --output-dir dist/rpm \
+            --signing-key-id "$RPM_SIGNING_KEY_ID"
 
       - name: rpmlint
         run: |
-          set -eux
-          rpmlint -v ./*.rpm || true
+          set -euxo pipefail
+          mapfile -t RPM_FILES < <(find dist/rpm -type f -name '*.rpm' -print)
+          if [ "${#RPM_FILES[@]}" -eq 0 ]; then
+            echo "No RPMs found" >&2
+            exit 1
+          fi
+          rpmlint -v "${RPM_FILES[@]}" || true
 
       - name: List RPM contents
         run: |
-          set -eux
-          rpm -qlp ./*.rpm
+          set -euxo pipefail
+          find dist/rpm -type f -name '*.rpm' -print0 | xargs -0 -n1 rpm -qlp
 
-      - name: Install RPM in container and validate
+      - name: Verify RPM signatures
         run: |
-          set -eux
-          dnf -y install ./*.rpm
+          set -euxo pipefail
+          find dist/rpm -type f -name '*.rpm' -print0 | xargs -0 rpm --checksig
+
+      - name: Install x86_64 RPM in container and validate
+        run: |
+          set -euxo pipefail
+          dnf -y install dist/rpm/amd64/*.rpm
           rpm -q claude-desktop
           rpm -ql claude-desktop | head -n 100
           dnf -y remove claude-desktop
@@ -77,14 +87,71 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: claude-desktop-${{ matrix.fedora }}-${{ matrix.arch }}
-          path: "*.rpm"
+          name: claude-desktop-fedora-${{ matrix.fedora }}
+          path: dist/rpm
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
         with:
-          files: "*.rpm"
+          files: "dist/rpm/**/*.rpm"
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish DNF repository
+    needs: build
+    runs-on: ubuntu-latest
+    container: fedora:41
+    permissions:
+      contents: write
+    steps:
+      - name: Install publishing dependencies
+        run: |
+          set -eux
+          echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
+          dnf -y --refresh update
+          dnf -y install git createrepo_c rpm-sign rsync gnupg2
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/rpm
+          merge-multiple: true
+
+      - name: Compute repository base URL
+        run: |
+          set -eux
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "DNF_REPO_BASE_URL=https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/rpm" >> "$GITHUB_ENV"
+
+      - name: Prepare DNF repository payload
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/publish-dnf-repo.sh
+          mkdir -p build/dnf public
+          scripts/publish-dnf-repo.sh \
+            --rpm-dir dist/rpm \
+            --repo-dir build/dnf \
+            --repo-url "$DNF_REPO_BASE_URL" \
+            --signing-key-id "$RPM_SIGNING_KEY_ID" \
+            --sync-dest public/rpm
+          touch public/.nojekyll
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: public
+          commit_message: "chore: publish rpm repo for ${{ github.ref_name }}"
