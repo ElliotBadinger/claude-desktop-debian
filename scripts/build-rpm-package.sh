@@ -60,11 +60,13 @@ SPEC_FILE="$SPECS/${PACKAGE_NAME}.spec"
 echo "📝 Generating spec file at $SPEC_FILE"
 # Disable nounset while writing heredoc to avoid accidental expansion errors if any variable-like tokens slip through
 set +u
-cat > "$SPEC_FILE" << 'EOF'
+# shellcheck disable=SC2154
+cat > "$SPEC_FILE" <<EOF
 Name:           claude-desktop
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Claude Desktop for Linux
+Summary:        ${DESCRIPTION}
+Packager:       ${MAINTAINER}
 
 License:        MIT and ASL 2.0
 URL:            https://github.com/aaddrick/claude-desktop-debian
@@ -72,8 +74,7 @@ ExclusiveArch:  x86_64 aarch64
 Requires:       hicolor-icon-theme, desktop-file-utils
 
 %description
-Claude is an AI assistant from Anthropic.
-This package provides the desktop interface for Claude.
+${DESCRIPTION}
 
 %prep
 # No sources to unpack

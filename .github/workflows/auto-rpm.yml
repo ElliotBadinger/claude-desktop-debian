@@ -17,6 +17,9 @@ jobs:
     name: Detect upstream version and create tag if needed
     runs-on: ubuntu-latest
     container: fedora:41
+    outputs:
+      version: ${{ steps.upstream.outputs.version }}
+      tag-created: ${{ steps.create_tag.outputs.created }}
     steps:
       - name: Install tooling
         run: |
@@ -58,9 +61,74 @@ jobs:
 
       - name: Create tag v${{ steps.upstream.outputs.version }}
         if: steps.tagcheck.outputs.exists != 'true'
+        id: create_tag
         run: |
           set -eux
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "v${{ steps.upstream.outputs.version }}"
           git push origin "v${{ steps.upstream.outputs.version }}"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  build_and_publish:
+    name: Build RPMs and publish DNF repo
+    needs: check_and_tag
+    if: needs.check_and_tag.outputs.tag-created == 'true'
+    runs-on: ubuntu-latest
+    container: fedora:41
+    permissions:
+      contents: write
+    steps:
+      - name: Install build and publishing dependencies
+        run: |
+          set -eux
+          echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
+          dnf -y --refresh update
+          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync createrepo_c rpm-sign rsync gnupg2
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute repository base URL
+        run: |
+          set -eux
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "DNF_REPO_BASE_URL=https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/rpm" >> "$GITHUB_ENV"
+
+      - name: Build RPM artifacts
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          chmod +x scripts/build-rpm.sh
+          scripts/build-rpm.sh --version "${{ needs.check_and_tag.outputs.version }}" --output-dir dist/rpm
+
+      - name: Prepare DNF repository payload
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
+        run: |
+          set -euxo pipefail
+          mkdir -p build/dnf public
+          chmod +x scripts/publish-dnf-repo.sh
+          scripts/publish-dnf-repo.sh \
+            --rpm-dir dist/rpm \
+            --repo-dir build/dnf \
+            --repo-url "$DNF_REPO_BASE_URL" \
+            --signing-key-id "$RPM_SIGNING_KEY_ID" \
+            --sync-dest public/rpm
+          touch public/.nojekyll
+
+      - name: Publish repository to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: public
+          commit_message: "chore: publish rpm repo for ${{ needs.check_and_tag.outputs.version }} (auto)"
