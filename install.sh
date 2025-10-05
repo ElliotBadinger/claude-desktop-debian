@@ -58,6 +58,7 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
+    # shellcheck source=/etc/os-release
     # shellcheck disable=SC1091
     . /etc/os-release
     local id="${ID:-}"; local like="${ID_LIKE:-}"
@@ -68,6 +69,7 @@ detect_pkg_mgr() {
 }
 
 fedora_version() {
+  # shellcheck source=/etc/os-release
   # shellcheck disable=SC1091
   . /etc/os-release 2>/dev/null || true
   echo "${VERSION_ID:-40}" | cut -d. -f1
@@ -229,7 +231,8 @@ CRON
 perform_install() {
   local mgr="$1"; local arch="$2"
   log "Package manager: $mgr, arch: $arch"
-  local json; json="$(get_latest_release_json)"
+  local json
+  json="$(get_latest_release_json)"
   local url=""
   if [[ "$mgr" == "apt" ]]; then
     url="$(echo "$json" | json_find_asset_url "claude-desktop_.*_${arch}\\.deb")"
@@ -246,7 +249,8 @@ perform_install() {
     return 0
   fi
   if [[ "$mgr" == "dnf" ]]; then
-    local fv; fv="$(fedora_version)"
+    local fv
+    fv="$(fedora_version)"
     local rpm_arch
     if [[ "$arch" == "amd64" ]]; then rpm_arch="x86_64"; else rpm_arch="aarch64"; fi
     url="$(echo "$json" | json_find_asset_url "claude-desktop-.*\\.fc${fv}\\.${rpm_arch}\\.rpm")"

@@ -9,6 +9,7 @@ APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./buil
 PACKAGE_NAME="$5"
 MAINTAINER="$6"
 DESCRIPTION="$7"
+: "$MAINTAINER" "$DESCRIPTION"
 
 echo "--- Starting RPM Package Build ---"
 echo "Version: $VERSION"
