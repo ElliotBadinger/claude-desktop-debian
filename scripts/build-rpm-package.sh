@@ -47,10 +47,11 @@ LOG_FILE="${LOG_FILE:-"$LOG_DIR/rpmbuild.log"}"
 # Reproducible builds: set SOURCE_DATE_EPOCH if not provided
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
   if command -v git >/dev/null 2>&1; then
-    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
+    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date -u +%s)"
   else
-    export SOURCE_DATE_EPOCH="$(date -u +%s)"
+    SOURCE_DATE_EPOCH="$(date -u +%s)"
   fi
+  export SOURCE_DATE_EPOCH
 fi
 
 # Generate SPEC file
@@ -58,11 +59,13 @@ SPEC_FILE="$SPECS/${PACKAGE_NAME}.spec"
 echo "📝 Generating spec file at $SPEC_FILE"
 # Disable nounset while writing heredoc to avoid accidental expansion errors if any variable-like tokens slip through
 set +u
-cat > "$SPEC_FILE" << 'EOF'
+# shellcheck disable=SC2154
+cat > "$SPEC_FILE" <<EOF
 Name:           claude-desktop
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Claude Desktop for Linux
+Summary:        ${DESCRIPTION}
+Packager:       ${MAINTAINER}
 
 License:        MIT and ASL 2.0
 URL:            https://github.com/aaddrick/claude-desktop-debian
@@ -70,8 +73,7 @@ ExclusiveArch:  x86_64 aarch64
 Requires:       hicolor-icon-theme, desktop-file-utils
 
 %description
-Claude is an AI assistant from Anthropic.
-This package provides the desktop interface for Claude.
+${DESCRIPTION}
 
 %prep
 # No sources to unpack
