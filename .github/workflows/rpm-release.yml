@@ -41,35 +41,60 @@ jobs:
           # Harden DNF for reliability and speed
           echo -e "fastestmirror=True\nmax_parallel_downloads=10\nretries=5\ntimeout=30" | tee -a /etc/dnf/dnf.conf
           dnf -y --refresh update
-          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync
+          dnf -y install git p7zip p7zip-plugins wget icoutils ImageMagick rpm-build desktop-file-utils rpmlint zsync rpm-sign gnupg2
 
       - name: Checkout
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 0
 
-      - name: Build RPM
+      - name: Build and sign RPM
         shell: bash
+        env:
+          RPM_SIGNING_KEY_BASE64: ${{ secrets.RPM_SIGNING_KEY_BASE64 }}
+          RPM_SIGNING_KEY_ID: ${{ secrets.RPM_SIGNING_KEY_ID }}
+          RPM_SIGNING_PASSPHRASE: ${{ secrets.RPM_SIGNING_PASSPHRASE }}
         run: |
           set -euxo pipefail
           if [ "${{ matrix.arch }}" = "x86_64" ]; then TARGET_ARCH="amd64"; else TARGET_ARCH="arm64"; fi
-          chmod +x ./build.sh
-          ./build.sh --build rpm --clean yes --target-arch "$TARGET_ARCH"
+          mkdir -p dist/rpm
+          chmod +x scripts/build-rpm.sh
+          VERSION_ARGS=()
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            VERSION_ARGS=(--version "$VERSION")
+          fi
+          scripts/build-rpm.sh \
+            "${VERSION_ARGS[@]}" \
+            --arch "$TARGET_ARCH" \
+            --output-dir dist/rpm \
+            --signing-key-id "$RPM_SIGNING_KEY_ID"
 
       - name: rpmlint
         run: |
-          set -eux
-          rpmlint -v ./*.rpm || true
+          set -euxo pipefail
+          mapfile -t RPM_FILES < <(find dist/rpm -type f -name '*.rpm' -print)
+          if [ "${#RPM_FILES[@]}" -eq 0 ]; then
+            echo "No RPMs found" >&2
+            exit 1
+          fi
+          rpmlint -v "${RPM_FILES[@]}" || true
 
       - name: List RPM contents
         run: |
-          set -eux
-          rpm -qlp ./*.rpm
+          set -euxo pipefail
+          find dist/rpm -type f -name '*.rpm' -print0 | xargs -0 -n1 rpm -qlp
+
+      - name: Verify RPM signatures
+        run: |
+          set -euxo pipefail
+          find dist/rpm -type f -name '*.rpm' -print0 | xargs -0 rpm --checksig
 
       - name: Install RPM in container and validate
         run: |
-          set -eux
-          dnf -y install ./*.rpm
+          set -euxo pipefail
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then TARGET_DIR="amd64"; else TARGET_DIR="arm64"; fi
+          dnf -y install dist/rpm/"${TARGET_DIR}"/*.rpm
           rpm -q claude-desktop
           rpm -ql claude-desktop | head -n 100
           dnf -y remove claude-desktop
@@ -78,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: claude-desktop-${{ matrix.fedora }}-${{ matrix.arch }}
-          path: "*.rpm"
+          path: dist/rpm
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
