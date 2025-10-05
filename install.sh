@@ -4,7 +4,7 @@ set -euo pipefail
 OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
 API_BASE="https://api.github.com/repos/${OWNER}/${REPO}"
-ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-aaddrick}"
+ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-ElliotBadinger}"
 
 usage() { cat <<'EOF'
 Usage: install.sh [--update-only] [--no-timer]

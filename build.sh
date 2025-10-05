@@ -722,8 +722,8 @@ elif [ "$BUILD_FORMAT" = "appimage" ]; then
             echo -e "   3. Configure manual updates (optional):"
             echo -e "      - In Gear Lever, select your integrated Claude Desktop"
             echo -e "      - Choose 'Github' as update source"
-            echo -e "      - Use this update URL: \033[1;33mhttps://github.com/aaddrick/claude-desktop-debian/releases/download/*/claude-desktop-*-${ARCHITECTURE}.AppImage\033[0m"
-            echo -e "   \033[1;34m→\033[0m For automatic updates, download release versions: https://github.com/aaddrick/claude-desktop-debian/releases"
+            echo -e "      - Use this update URL: \033[1;33mhttps://github.com/ElliotBadinger/claude-desktop-debian/releases/download/*/claude-desktop-*-${ARCHITECTURE}.AppImage\033[0m"
+            echo -e "   \033[1;34m→\033[0m For automatic updates, download release versions: https://github.com/ElliotBadinger/claude-desktop-debian/releases"
         fi
     else
         echo -e "⚠️ AppImage file not found. Cannot provide usage instructions."

@@ -2,7 +2,7 @@
 
 This project provides build scripts to run Claude Desktop natively on Linux systems. It repackages the official Windows application for Debian-based and Fedora distributions, producing `.deb`, `.rpm`, or AppImage artifacts.
 
-**Note:** This is an unofficial build script. For official support, please visit [Anthropic's website](https://www.anthropic.com). For issues with the build script or Linux implementation, please [open an issue](https://github.com/aaddrick/claude-desktop-debian/issues) in this repository.
+**Note:** This is an unofficial build script. For official support, please visit [Anthropic's website](https://www.anthropic.com). For issues with the build script or Linux implementation, please [open an issue](https://github.com/ElliotBadinger/claude-desktop-debian/issues) in this repository.
 
 ## Features
 
@@ -58,7 +58,7 @@ Using a fork:
 
 ### Using Pre-built Releases
 
-Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).
+Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/ElliotBadinger/claude-desktop-debian/releases).
 
 ### Hosted DNF Repository (Fedora, RHEL, CentOS Stream)
 
@@ -67,7 +67,7 @@ Automated builds are published to a signed DNF repository hosted on GitHub Pages
 1. **Import the GPG key** (only required once):
 
    ```bash
-   sudo rpm --import https://aaddrick.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   sudo rpm --import https://elliotbadinger.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
    ```
 
 2. **Create the repo definition** at `/etc/yum.repos.d/claude-desktop.repo`:
@@ -76,11 +76,11 @@ Automated builds are published to a signed DNF repository hosted on GitHub Pages
    sudo tee /etc/yum.repos.d/claude-desktop.repo <<'EOF'
    [claude-desktop]
    name=Claude Desktop for Fedora/RHEL
-   baseurl=https://aaddrick.github.io/claude-desktop-debian/rpm/$basearch/
+   baseurl=https://elliotbadinger.github.io/claude-desktop-debian/rpm/$basearch/
    enabled=1
    gpgcheck=1
    repo_gpgcheck=1
-   gpgkey=https://aaddrick.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   gpgkey=https://elliotbadinger.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
    metadata_expire=6h
    EOF
    ```
@@ -112,7 +112,7 @@ The same configuration works on RHEL/CentOS Stream systems using `dnf` or `yum`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/aaddrick/claude-desktop-debian.git
+git clone https://github.com/ElliotBadinger/claude-desktop-debian.git
 cd claude-desktop-debian
 
 # Build a .deb package (default)
