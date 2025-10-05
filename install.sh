@@ -58,8 +58,8 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
-# shellcheck source=/etc/os-release
-# shellcheck disable=SC1091
+    # shellcheck source=/etc/os-release
+    # shellcheck disable=SC1091
     . /etc/os-release
     local id="${ID:-}"; local like="${ID_LIKE:-}"
     if [[ "$id" =~ (debian|ubuntu|linuxmint) ]] || [[ "$like" =~ (debian|ubuntu) ]]; then echo "apt"; return; fi
@@ -69,8 +69,8 @@ detect_pkg_mgr() {
 }
 
 fedora_version() {
-# shellcheck source=/etc/os-release
-# shellcheck disable=SC1091
+  # shellcheck source=/etc/os-release
+  # shellcheck disable=SC1091
   . /etc/os-release 2>/dev/null || true
   echo "${VERSION_ID:-40}" | cut -d. -f1
 }
