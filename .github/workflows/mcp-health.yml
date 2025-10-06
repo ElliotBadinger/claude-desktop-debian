@@ -1,0 +1,83 @@
+name: MCP health checks
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  diagnose:
+    name: MCP diagnostics (Fedora ${{ matrix.fedora }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora: ["41", "42"]
+    container:
+      image: fedora:${{ matrix.fedora }}
+    env:
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.config
+      XDG_DATA_HOME: ${{ github.workspace }}/.local/share
+      XDG_STATE_HOME: ${{ github.workspace }}/.local/state
+      npm_config_cache: ${{ github.workspace }}/.npm
+    steps:
+      - name: Install system dependencies
+        run: |
+          set -euo pipefail
+          dnf -y install --setopt=install_weak_deps=False git nodejs npm tar
+
+      - name: Prepare XDG layout
+        run: |
+          set -euo pipefail
+          mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$npm_config_cache"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js dependencies
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+
+      - name: Run MCP diagnostics
+        id: diagnose
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          status=0
+          node scripts/diagnose-mcp.js --verbose || status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Collect MCP logs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/mcp-logs
+          for dir in "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"; do
+            if [ -d "$dir" ]; then
+              name=$(basename "$dir")
+              mkdir -p "artifacts/mcp-logs/$name"
+              cp -a "$dir"/. "artifacts/mcp-logs/$name/" || true
+            fi
+          done
+          if [ -z "$(ls -A artifacts/mcp-logs)" ]; then
+            echo "No MCP logs were generated." > artifacts/mcp-logs/README.txt
+          fi
+
+      - name: Upload MCP logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-logs-fedora-${{ matrix.fedora }}
+          path: artifacts/mcp-logs
+
+      - name: Fail if diagnostics failed
+        if: steps.diagnose.outputs.exit_code != '0'
+        run: |
+          echo "MCP diagnostics exited with status ${{ steps.diagnose.outputs.exit_code }}"
+          exit 1

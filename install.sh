@@ -4,7 +4,7 @@ set -euo pipefail
 OWNER="${CLAUDE_OWNER:-ElliotBadinger}"
 REPO="${CLAUDE_REPO:-claude-desktop-debian}"
 API_BASE="https://api.github.com/repos/${OWNER}/${REPO}"
-ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-aaddrick}"
+ALT_OWNER="${CLAUDE_FALLBACK_OWNER:-ElliotBadinger}"
 
 usage() { cat <<'EOF'
 Usage: install.sh [--update-only] [--no-timer]
@@ -232,7 +232,8 @@ CRON
 perform_install() {
   local mgr="$1"; local arch="$2"
   log "Package manager: $mgr, arch: $arch"
-  local json; json="$(get_latest_release_json)"
+  local json
+  json="$(get_latest_release_json)"
   local url=""
   if [[ "$mgr" == "apt" ]]; then
     url="$(echo "$json" | json_find_asset_url "claude-desktop_.*_${arch}\\.deb")"
@@ -249,7 +250,8 @@ perform_install() {
     return 0
   fi
   if [[ "$mgr" == "dnf" ]]; then
-    local fv; fv="$(fedora_version)"
+    local fv
+    fv="$(fedora_version)"
     local rpm_arch
     if [[ "$arch" == "amd64" ]]; then rpm_arch="x86_64"; else rpm_arch="aarch64"; fi
     url="$(echo "$json" | json_find_asset_url "claude-desktop-.*\\.fc${fv}\\.${rpm_arch}\\.rpm")"
