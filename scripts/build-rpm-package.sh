@@ -60,15 +60,26 @@ fi
 # Generate SPEC file
 SPEC_FILE="$SPECS/${PACKAGE_NAME}.spec"
 echo "📝 Generating spec file at $SPEC_FILE"
-# Disable nounset while writing heredoc to avoid accidental expansion errors if any variable-like tokens slip through
-set +u
-# shellcheck disable=SC2154
-cat > "$SPEC_FILE" <<EOF
+# Use provided metadata when generating the SPEC file
+SUMMARY_TEXT="Claude Desktop for Linux"
+if [ -n "${DESCRIPTION:-}" ]; then
+  SUMMARY_TEXT="$DESCRIPTION"
+fi
+
+LONG_DESCRIPTION="Claude is an AI assistant from Anthropic.
+This package provides the desktop interface for Claude."
+if [ -n "${DESCRIPTION:-}" ]; then
+  LONG_DESCRIPTION="$DESCRIPTION"
+fi
+
+PACKAGER_NAME="${MAINTAINER:-Claude Desktop Maintainers}"
+
+cat > "$SPEC_FILE" <<'EOF'
 Name:           claude-desktop
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        ${DESCRIPTION}
-Packager:       ${MAINTAINER}
+Summary:        __SUMMARY_TEXT__
+Packager:       __PACKAGER_NAME__
 
 License:        MIT and ASL 2.0
 URL:            https://github.com/ElliotBadinger/claude-desktop-debian
@@ -76,7 +87,7 @@ ExclusiveArch:  x86_64 aarch64
 Requires:       hicolor-icon-theme, desktop-file-utils
 
 %description
-${DESCRIPTION}
+__LONG_DESCRIPTION__
 
 %prep
 # No sources to unpack
@@ -219,6 +230,26 @@ exit 0
 - Initial package build for Fedora
 
 EOF
+
+SPEC_FILE_PATH="$SPEC_FILE" \
+SUMMARY_TEXT_VALUE="$SUMMARY_TEXT" \
+PACKAGER_NAME_VALUE="$PACKAGER_NAME" \
+LONG_DESCRIPTION_VALUE="$LONG_DESCRIPTION" \
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+path = Path(os.environ["SPEC_FILE_PATH"])
+summary = os.environ["SUMMARY_TEXT_VALUE"]
+packager = os.environ["PACKAGER_NAME_VALUE"]
+description = os.environ["LONG_DESCRIPTION_VALUE"]
+
+text = path.read_text()
+text = text.replace("__SUMMARY_TEXT__", summary)
+text = text.replace("__PACKAGER_NAME__", packager)
+text = text.replace("__LONG_DESCRIPTION__", description)
+path.write_text(text)
+PY
 # Re-enable nounset after heredoc
 set -u
 
