@@ -20,7 +20,8 @@ CLAUDE_X64_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-49
 WORK_DIR="$(mktemp -d -t claude-ver-XXXXXX)"
 # shellcheck disable=SC2317
 cleanup() {
-  rm -rf "${WORK_DIR:?}" 2>/dev/null || true
+  # shellcheck disable=SC2317
+  rm -rf "$WORK_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
 

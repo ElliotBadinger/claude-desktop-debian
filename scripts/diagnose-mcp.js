@@ -1,233 +1,322 @@
 #!/usr/bin/env node
-/*
- * Lightweight MCP diagnostic harness for packaging CI.
- *
- * The upstream Windows release bundles MCP extensions as signed archives.
- * Those bundles are unpacked by the Electron launcher at runtime inside the
- * user's XDG state directory. When packaging on Linux we only ship those
- * archives, so CI needs to sanity check that the artifacts exist and look
- * healthy without actually booting the graphical app.
- */
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const process = require('node:process');
+const { setTimeout: delay } = require('node:timers/promises');
+const { Client } = require('@modelcontextprotocol/sdk/client');
+const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
-const fs = require('fs');
-const fsp = fs.promises;
-const path = require('path');
-const os = require('os');
+const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_RETRIES = 2;
 
-const args = new Set(process.argv.slice(2));
-const verbose = args.has('--verbose');
-
-function log(message) {
-  const line = `[diagnose] ${message}`;
-  console.log(line);
-  diagnostics.push({ level: 'info', message, timestamp: new Date().toISOString() });
+function printUsage() {
+  const script = path.basename(process.argv[1] || 'diagnose-mcp.js');
+  console.error(`Usage: ${script} --server <name> [--timeout ms] [--retries n] [--verbose]`);
 }
 
-function debug(message) {
-  if (!verbose) return;
-  const line = `[diagnose:debug] ${message}`;
-  console.log(line);
-  diagnostics.push({ level: 'debug', message, timestamp: new Date().toISOString() });
-}
-
-function warn(message) {
-  const line = `[diagnose:warn] ${message}`;
-  console.warn(line);
-  diagnostics.push({ level: 'warn', message, timestamp: new Date().toISOString() });
-}
-
-const diagnostics = [];
-
-const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
-const xdgStateHome = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-const xdgCacheHome = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
-const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-
-const diagnosticRoot = path.join(xdgStateHome, 'claude-desktop', 'mcp', 'diagnostics');
-const bundleCacheRoot = path.join(xdgCacheHome, 'claude-desktop', 'mcp');
-const bundleDataRoot = path.join(xdgDataHome, 'claude-desktop', 'mcp');
-
-async function ensureDirectories() {
-  for (const dir of [diagnosticRoot, bundleCacheRoot, bundleDataRoot]) {
-    await fsp.mkdir(dir, { recursive: true });
+function parseArgs(argv) {
+  const args = { server: undefined, timeout: DEFAULT_TIMEOUT_MS, retries: DEFAULT_RETRIES, verbose: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    switch (arg) {
+      case '--server': {
+        const value = argv[i + 1];
+        if (!value) {
+          throw new Error('--server requires a value');
+        }
+        args.server = value;
+        i += 1;
+        break;
+      }
+      case '--timeout': {
+        const value = argv[i + 1];
+        if (!value) {
+          throw new Error('--timeout requires a value');
+        }
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          throw new Error('--timeout must be a positive integer (milliseconds)');
+        }
+        args.timeout = parsed;
+        i += 1;
+        break;
+      }
+      case '--retries': {
+        const value = argv[i + 1];
+        if (!value) {
+          throw new Error('--retries requires a value');
+        }
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          throw new Error('--retries must be a non-negative integer');
+        }
+        args.retries = parsed;
+        i += 1;
+        break;
+      }
+      case '--verbose':
+        args.verbose = true;
+        break;
+      case '--help':
+      case '-h':
+        printUsage();
+        process.exit(0);
+        break;
+      default:
+        if (arg.startsWith('-')) {
+          throw new Error(`Unknown argument: ${arg}`);
+        }
+    }
   }
+  if (!args.server) {
+    throw new Error('Missing required --server argument');
+  }
+  return args;
 }
 
-async function fileExists(filePath) {
+function resolveConfigPath() {
+  if (process.env.CLAUDE_DESKTOP_CONFIG) {
+    return process.env.CLAUDE_DESKTOP_CONFIG;
+  }
+  const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  return path.join(configDir, 'Claude', 'claude_desktop_config.json');
+}
+
+function loadConfig(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Configuration file not found at ${filePath}`);
+  }
+  const raw = fs.readFileSync(filePath, 'utf8');
   try {
-    await fsp.access(filePath, fs.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function discoverManifests(root, depth = 0, maxDepth = 4) {
-  const manifests = [];
-  if (depth > maxDepth) {
-    return manifests;
-  }
-  let entries;
-  try {
-    entries = await fsp.readdir(root, { withFileTypes: true });
+    return JSON.parse(raw);
   } catch (error) {
-    debug(`Skipping ${root}: ${error.message}`);
-    return manifests;
-  }
-  for (const entry of entries) {
-    const entryPath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith('.')) continue;
-      manifests.push(...await discoverManifests(entryPath, depth + 1, maxDepth));
-    } else if (entry.isFile() && entry.name.toLowerCase() === 'manifest.json') {
-      manifests.push(entryPath);
-    }
-  }
-  return manifests;
-}
-
-async function parseManifest(filePath) {
-  try {
-    const raw = await fsp.readFile(filePath, 'utf8');
-    const json = JSON.parse(raw);
-    return { json, raw };
-  } catch (error) {
-    return { error };
+    throw new Error(`Failed to parse configuration: ${(error && error.message) || error}`);
   }
 }
 
-function isMcpManifest(json) {
-  if (!json || typeof json !== 'object') return false;
-  if (json.type && typeof json.type === 'string' && json.type.toLowerCase().includes('mcp')) {
-    return true;
+function resolveServerConfig(config, serverName) {
+  const servers = (config && (config.mcpServers || config.mcp_servers)) || {};
+  const server = servers[serverName];
+  if (!server) {
+    throw new Error(`Server '${serverName}' not found in configuration`);
   }
-  if (json.mcp || json.mcpServer || json.mcpServers) {
-    return true;
+  if (server.disabled || server.enabled === false) {
+    throw new Error(`Server '${serverName}' is disabled in configuration`);
   }
-  if (json.capabilities && typeof json.capabilities === 'object') {
-    const keys = Object.keys(json.capabilities);
-    return keys.some((key) => key.toLowerCase().includes('mcp'));
+  if (server.transport && server.transport !== 'stdio') {
+    throw new Error(`Server '${serverName}' uses unsupported transport '${server.transport}'. Only 'stdio' is supported.`);
   }
-  return false;
+  if (!server.command || typeof server.command !== 'string') {
+    throw new Error(`Server '${serverName}' is missing a string 'command' field`);
+  }
+  let args = [];
+  if (Array.isArray(server.args)) {
+    args = server.args.map(String);
+  } else if (server.args && typeof server.args === 'object') {
+    throw new Error(`Server '${serverName}' has invalid 'args' format; expected array of strings`);
+  }
+  const env = {};
+  if (server.env && typeof server.env === 'object') {
+    for (const [key, value] of Object.entries(server.env)) {
+      if (value !== undefined && value !== null) {
+        env[key] = String(value);
+      }
+    }
+  }
+  const cwd = server.cwd && typeof server.cwd === 'string' ? server.cwd : undefined;
+  return {
+    name: serverName,
+    command: server.command,
+    args,
+    env,
+    cwd
+  };
 }
 
-async function run() {
-  await ensureDirectories();
-  log(`Node.js version: ${process.version}`);
-  log(`Workspace root: ${workspace}`);
-  debug(`State root: ${diagnosticRoot}`);
+function resolveStateDir(serverName) {
+  const stateRoot = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+  const dir = path.join(stateRoot, 'claude-desktop', 'mcp', 'diagnostics', serverName, new Date().toISOString().replace(/[:.]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
-  const rootsToProbe = new Set([
-    path.join(workspace, 'resources'),
-    path.join(workspace, 'bundled-mcp'),
-    path.join(workspace, 'build', 'bundled-mcp'),
-    path.join(workspace, 'dist', 'bundled-mcp'),
-    bundleDataRoot,
-    bundleCacheRoot,
-  ]);
-
-  const customRoots = process.env.MCP_DIAG_EXTRA_ROOTS;
-  if (customRoots) {
-    for (const segment of customRoots.split(path.delimiter)) {
-      if (!segment) continue;
-      rootsToProbe.add(path.resolve(segment));
+function createLogger(outputDir, verbose) {
+  const logPath = path.join(outputDir, 'diagnose.log');
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  function log(message) {
+    const line = `[${new Date().toISOString()}] ${message}`;
+    logStream.write(`${line}\n`);
+    if (verbose) {
+      console.log(line);
     }
   }
+  function close() {
+    logStream.end();
+  }
+  return { log, close, logPath };
+}
 
-  const discovered = [];
-  for (const root of rootsToProbe) {
-    const exists = await fileExists(root);
-    debug(`Probe ${root}: ${exists ? 'exists' : 'missing'}`);
-    if (!exists) continue;
-    const manifests = await discoverManifests(root);
-    for (const manifestPath of manifests) {
-      const { json, error } = await parseManifest(manifestPath);
-      if (error) {
-        warn(`Failed to parse manifest at ${manifestPath}: ${error.message}`);
-        discovered.push({ manifestPath, status: 'parse-error', error: error.message });
-        continue;
-      }
-      if (!isMcpManifest(json)) {
-        debug(`Skipping non-MCP manifest ${manifestPath}`);
-        continue;
-      }
-      discovered.push({ manifestPath, status: 'pending', manifest: json });
-    }
+async function runAttempt({ attempt, totalAttempts, serverConfig, timeout, log }) {
+  const env = Object.assign({}, serverConfig.env);
+  if (env.MCP_DEBUG === undefined) {
+    env.MCP_DEBUG = process.env.MCP_DEBUG || '1';
   }
 
-  if (discovered.length === 0) {
-    warn('No bundled MCP manifests were found. Skipping runtime checks.');
-    await emitSummary({
-      status: 'skipped',
-      reason: 'No manifests discovered',
-      scannedRoots: Array.from(rootsToProbe),
-      diagnostics,
-    });
-    return;
-  }
-
-  let failures = 0;
-  for (const item of discovered) {
-    if (item.status === 'parse-error') {
-      failures += 1;
-      continue;
-    }
-    const name = item.manifest?.name || path.basename(path.dirname(item.manifestPath));
-    const logPath = path.join(diagnosticRoot, `${sanitizeFileName(name)}.log`);
-    const lines = [];
-    lines.push(`manifest: ${item.manifestPath}`);
-    lines.push(`name: ${name}`);
-    if (item.manifest?.version) {
-      lines.push(`version: ${item.manifest.version}`);
-    }
-    const entry = item.manifest?.entry || item.manifest?.entryPoint || item.manifest?.main;
-    if (entry) {
-      const resolved = path.resolve(path.dirname(item.manifestPath), entry);
-      const exists = await fileExists(resolved);
-      lines.push(`entry: ${entry}`);
-      lines.push(`entryResolved: ${resolved}`);
-      lines.push(`entryExists: ${exists}`);
-      if (!exists) {
-        failures += 1;
-        warn(`Missing entrypoint for ${name} (${resolved})`);
-      }
-    } else {
-      warn(`Manifest ${name} does not declare an entry point`);
-      failures += 1;
-    }
-    if (item.manifest?.capabilities) {
-      lines.push(`capabilities: ${Object.keys(item.manifest.capabilities).join(', ')}`);
-    }
-    await fsp.writeFile(logPath, `${lines.join('\n')}\n`, 'utf8');
-    debug(`Wrote diagnostic log ${logPath}`);
-    item.status = 'checked';
-  }
-
-  await emitSummary({
-    status: failures > 0 ? 'failed' : 'passed',
-    scannedRoots: Array.from(rootsToProbe),
-    manifestsChecked: discovered.length,
-    failures,
-    diagnostics,
+  const transport = new StdioClientTransport({
+    command: serverConfig.command,
+    args: serverConfig.args,
+    env,
+    cwd: serverConfig.cwd,
+    stderr: 'pipe'
   });
 
-  if (failures > 0) {
-    process.exitCode = 1;
+  const stderrPath = path.join(serverConfig.outputDir, `server-stderr-attempt-${attempt + 1}.log`);
+  const stderrStream = fs.createWriteStream(stderrPath, { flags: 'a' });
+  const stderr = transport.stderr;
+  if (stderr) {
+    stderr.setEncoding('utf8');
+    stderr.on('data', chunk => {
+      stderrStream.write(chunk);
+    });
+  }
+
+  const client = new Client({
+    name: 'claude-desktop-diagnostics',
+    version: '1.0.0'
+  });
+
+  transport.onerror = error => {
+    log(`transport error: ${(error && error.message) || error}`);
+  };
+  client.onerror = error => {
+    log(`client error: ${(error && error.message) || error}`);
+  };
+
+  log(`Attempt ${attempt + 1}/${totalAttempts}: launching '${serverConfig.command}' ${serverConfig.args.join(' ')}`);
+
+  try {
+    await client.connect(transport, { timeout });
+    const serverInfo = client.getServerVersion();
+    if (serverInfo) {
+      log(`Handshake succeeded with server '${serverInfo.name}' (version ${serverInfo.version || 'unknown'})`);
+    } else {
+      log('Handshake succeeded but server version information was not provided.');
+    }
+    await client.close();
+    await transport.close();
+    stderrStream.end();
+    return { success: true, serverInfo };
+  } catch (error) {
+    log(`Handshake failed: ${(error && error.stack) || error}`);
+    try {
+      await client.close();
+    } catch (closeError) {
+      log(`Error closing client: ${(closeError && closeError.message) || closeError}`);
+    }
+    try {
+      await transport.close();
+    } catch (closeError) {
+      log(`Error closing transport: ${(closeError && closeError.message) || closeError}`);
+    }
+    stderrStream.end();
+    throw error;
   }
 }
 
-function sanitizeFileName(name) {
-  return name.replace(/[^a-z0-9-_]+/gi, '_');
+async function main() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error((error && error.message) || error);
+    printUsage();
+    process.exit(1);
+  }
+
+  const configPath = resolveConfigPath();
+  let config;
+  try {
+    config = loadConfig(configPath);
+  } catch (error) {
+    console.error((error && error.message) || error);
+    process.exit(1);
+  }
+
+  let serverConfig;
+  try {
+    serverConfig = resolveServerConfig(config, args.server);
+  } catch (error) {
+    console.error((error && error.message) || error);
+    process.exit(1);
+  }
+
+  const outputDir = resolveStateDir(args.server);
+  const { log, close, logPath } = createLogger(outputDir, args.verbose);
+  serverConfig.outputDir = outputDir;
+
+  log(`Using configuration file ${configPath}`);
+  log(`Logs and artifacts will be written to ${outputDir}`);
+  log(`Timeout: ${args.timeout}ms, Retries: ${args.retries}`);
+
+  const metadata = {
+    server: args.server,
+    command: serverConfig.command,
+    args: serverConfig.args,
+    cwd: serverConfig.cwd,
+    attempts: [],
+    createdAt: new Date().toISOString(),
+    configPath
+  };
+
+  let success = false;
+  let attemptError = null;
+  for (let attempt = 0; attempt <= args.retries; attempt += 1) {
+    const attemptInfo = { attempt: attempt + 1, startedAt: new Date().toISOString() };
+    try {
+      const result = await runAttempt({
+        attempt,
+        totalAttempts: args.retries + 1,
+        serverConfig,
+        timeout: args.timeout,
+        log
+      });
+      attemptInfo.completedAt = new Date().toISOString();
+      attemptInfo.success = true;
+      attemptInfo.serverInfo = result.serverInfo || null;
+      metadata.attempts.push(attemptInfo);
+      success = true;
+      break;
+    } catch (error) {
+      attemptError = error;
+      attemptInfo.completedAt = new Date().toISOString();
+      attemptInfo.success = false;
+      attemptInfo.error = (error && error.message) || String(error);
+      metadata.attempts.push(attemptInfo);
+      if (attempt < args.retries) {
+        log(`Retrying after failure (attempt ${attempt + 1} of ${args.retries + 1}).`);
+        await delay(1000);
+      }
+    }
+  }
+
+  fs.writeFileSync(path.join(outputDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+  close();
+
+  if (!success) {
+    console.error(`diagnose-mcp: failed to handshake with '${args.server}'. See ${logPath} for details.`);
+    if (attemptError) {
+      console.error((attemptError && attemptError.stack) || attemptError);
+    }
+    process.exit(2);
+  }
+
+  if (args.verbose) {
+    console.log(`Diagnostics completed successfully. Detailed logs: ${logPath}`);
+  }
 }
 
-async function emitSummary(summary) {
-  const summaryPath = path.join(diagnosticRoot, 'summary.json');
-  await fsp.writeFile(summaryPath, JSON.stringify(summary, null, 2), 'utf8');
-  log(`Wrote summary to ${summaryPath}`);
-}
-
-run().catch((error) => {
-  console.error('[diagnose:error]', error);
-  process.exitCode = 1;
+main().catch(error => {
+  console.error('diagnose-mcp encountered an unexpected error:', error && error.stack ? error.stack : error);
+  process.exit(1);
 });

@@ -429,7 +429,7 @@ echo "✓ Download complete: $CLAUDE_EXE_FILENAME"
 echo "📦 Extracting resources from $CLAUDE_EXE_FILENAME into separate directory..."
 CLAUDE_EXTRACT_DIR="$WORK_DIR/claude-extract"
 mkdir -p "$CLAUDE_EXTRACT_DIR"
-find "${CLAUDE_EXTRACT_DIR:?}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+rm -rf -- "${CLAUDE_EXTRACT_DIR:?}/"* "${CLAUDE_EXTRACT_DIR:?}/".??*
 if ! 7z x -y "$CLAUDE_EXE_PATH" -o"$CLAUDE_EXTRACT_DIR"; then
     echo "❌ Failed to extract installer"
     cd "$PROJECT_ROOT" && exit 1

@@ -17,6 +17,8 @@ echo "Target Arch: $TARGET_ARCH"
 echo "Work Directory: $WORK_DIR"
 echo "App Staging Directory: $APP_STAGING_DIR"
 echo "Package Name: $PACKAGE_NAME"
+echo "Maintainer: $MAINTAINER"
+echo "Description: $DESCRIPTION"
 
 # Map target arch to RPM arch
 case "$TARGET_ARCH" in
