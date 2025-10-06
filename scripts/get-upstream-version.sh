@@ -18,7 +18,12 @@ need_cmd 7z
 CLAUDE_X64_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
 
 WORK_DIR="$(mktemp -d -t claude-ver-XXXXXX)"
-trap 'rm -rf -- "$WORK_DIR"' EXIT
+# shellcheck disable=SC2317
+cleanup() {
+  # shellcheck disable=SC2317  # Invoked via trap on exit
+  rm -rf "$WORK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 EXE_PATH="$WORK_DIR/Claude-Setup-x64.exe"
 

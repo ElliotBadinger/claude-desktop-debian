@@ -61,13 +61,15 @@ detect_pkg_mgr() {
     # shellcheck disable=SC1091
     # shellcheck source=/etc/os-release
     . /etc/os-release
-    local id="${ID:-}"; local like="${ID_LIKE:-}"
+    local id="${ID:-}"
+    local like="${ID_LIKE:-}"
     if [[ "$id" =~ (debian|ubuntu|linuxmint) ]] || [[ "$like" =~ (debian|ubuntu) ]]; then echo "apt"; return; fi
     if [[ "$id" =~ (fedora|rhel|centos|rocky|alma) ]] || [[ "$like" =~ (rhel|fedora) ]]; then echo "dnf"; return; fi
   fi
   echo "appimage"
 }
 
+# shellcheck source=/etc/os-release
 fedora_version() {
   # shellcheck disable=SC1091
   # shellcheck source=/etc/os-release
