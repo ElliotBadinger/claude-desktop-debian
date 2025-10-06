@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "diagnose:mcp": "node scripts/diagnose-mcp.js"
+  },
   "devDependencies": {
     "@electron/asar": "^3.2.1"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1"
   }
 }

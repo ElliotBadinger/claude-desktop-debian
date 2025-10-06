@@ -24,9 +24,45 @@ on:
 
 jobs:
 
+  diagnose-mcp:
+    name: MCP server diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure mock MCP server
+        run: |
+          mkdir -p ~/.config/Claude
+          cat <<JSON > ~/.config/Claude/claude_desktop_config.json
+          {
+            "mcpServers": {
+              "filesystem": {
+                "command": "node",
+                "args": ["scripts/mock-mcp-server.js"],
+                "cwd": "$GITHUB_WORKSPACE",
+                "transport": "stdio"
+              }
+            }
+          }
+          JSON
+
+      - name: Run MCP diagnostics
+        run: npm run diagnose:mcp -- --server filesystem --timeout 10000 --retries 0
+
   # First, run the quick flag tests
   test-flags:
     name: Test Flags Parsing
+    needs: diagnose-mcp
     # Runner is defined in the called workflow (test-flags.yml)
     uses: ./.github/workflows/test-flags.yml
     # No inputs needed for test-flags.yml
