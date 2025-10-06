@@ -9,6 +9,7 @@ APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./buil
 PACKAGE_NAME="$5"
 MAINTAINER="$6"
 DESCRIPTION="$7"
+: "$MAINTAINER" "$DESCRIPTION"
 
 echo "--- Starting RPM Package Build ---"
 echo "Version: $VERSION"
@@ -79,7 +80,7 @@ Summary:        __SUMMARY_TEXT__
 Packager:       __PACKAGER_NAME__
 
 License:        MIT and ASL 2.0
-URL:            https://github.com/aaddrick/claude-desktop-debian
+URL:            https://github.com/ElliotBadinger/claude-desktop-debian
 ExclusiveArch:  x86_64 aarch64
 Requires:       hicolor-icon-theme, desktop-file-utils
 

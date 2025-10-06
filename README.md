@@ -2,7 +2,7 @@
 
 This project provides build scripts to run Claude Desktop natively on Linux systems. It repackages the official Windows application for Debian-based and Fedora distributions, producing `.deb`, `.rpm`, or AppImage artifacts.
 
-**Note:** This is an unofficial build script. For official support, please visit [Anthropic's website](https://www.anthropic.com). For issues with the build script or Linux implementation, please [open an issue](https://github.com/aaddrick/claude-desktop-debian/issues) in this repository.
+**Note:** This is an unofficial build script. For official support, please visit [Anthropic's website](https://www.anthropic.com). For issues with the build script or Linux implementation, please [open an issue](https://github.com/ElliotBadinger/claude-desktop-debian/issues) in this repository.
 
 ## Features
 
@@ -29,17 +29,17 @@ This project provides build scripts to run Claude Desktop natively on Linux syst
 Run a single command to install or update Claude Desktop. The script auto-detects your system (Debian/Ubuntu via apt, Fedora/RHEL via dnf/yum, or falls back to AppImage), installs dependencies when needed, updates an existing install (or clean reinstalls if the update fails), and sets up automatic updates (daily systemd timer or cron):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ElliotBadinger/claude-desktop-debian/main/install.sh | bash
 ```
 
 Options:
 - Disable auto-update timer:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash -s -- --no-timer
+  curl -fsSL https://raw.githubusercontent.com/ElliotBadinger/claude-desktop-debian/main/install.sh | bash -s -- --no-timer
   ```
 - Update-only (no change if up-to-date; if update fails, the script cleans and reinstalls):
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/aaddrick/claude-desktop-debian/main/install.sh | bash -s -- --update-only
+  curl -fsSL https://raw.githubusercontent.com/ElliotBadinger/claude-desktop-debian/main/install.sh | bash -s -- --update-only
   ```
 
 Auto-update management:
@@ -52,13 +52,53 @@ Auto-update management:
 Using a fork:
 - You can target a fork by setting environment variables before running the installer:
   ```bash
-  CLAUDE_OWNER="your-github-username-or-org" CLAUDE_REPO="your-fork-repo" \
-  curl -fsSL https://raw.githubusercontent.com/your-github-username-or-org/your-fork-repo/main/install.sh | bash
+  CLAUDE_OWNER="ElliotBadinger" CLAUDE_REPO="claude-desktop-debian" \
+  curl -fsSL https://raw.githubusercontent.com/ElliotBadinger/claude-desktop-debian/main/install.sh | bash
   ```
 
 ### Using Pre-built Releases
 
-Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases).
+Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](https://github.com/ElliotBadinger/claude-desktop-debian/releases).
+
+### Hosted DNF Repository (Fedora, RHEL, CentOS Stream)
+
+Automated builds are published to a signed DNF repository hosted on GitHub Pages. Import the signing key and configure the repo once, then use `dnf` for installs and upgrades.
+
+1. **Import the GPG key** (only required once):
+
+   ```bash
+   sudo rpm --import https://elliotbadinger.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   ```
+
+2. **Create the repo definition** at `/etc/yum.repos.d/claude-desktop.repo`:
+
+   ```bash
+   sudo tee /etc/yum.repos.d/claude-desktop.repo <<'EOF'
+   [claude-desktop]
+   name=Claude Desktop for Fedora/RHEL
+   baseurl=https://elliotbadinger.github.io/claude-desktop-debian/rpm/$basearch/
+   enabled=1
+   gpgcheck=1
+   repo_gpgcheck=1
+   gpgkey=https://elliotbadinger.github.io/claude-desktop-debian/rpm/RPM-GPG-KEY-claude-desktop
+   metadata_expire=6h
+   EOF
+   ```
+
+3. **Refresh metadata and install**:
+
+   ```bash
+   sudo dnf makecache
+   sudo dnf install -y claude-desktop
+   ```
+
+4. **Upgrading** is handled automatically by `dnf`. To trigger a manual upgrade:
+
+   ```bash
+   sudo dnf upgrade -y claude-desktop
+   ```
+
+The same configuration works on RHEL/CentOS Stream systems using `dnf` or `yum`. Packages and repository metadata are signed; `dnf` will verify both signatures using the imported key.
 
 ### Building from Source
 
@@ -72,7 +112,7 @@ Download the latest `.deb`, `.rpm`, or `.AppImage` from the [Releases page](http
 
 ```bash
 # Clone the repository
-git clone https://github.com/aaddrick/claude-desktop-debian.git
+git clone https://github.com/ElliotBadinger/claude-desktop-debian.git
 cd claude-desktop-debian
 
 # Build a .deb package (default)

@@ -17,6 +17,9 @@ jobs:
     name: Detect upstream version and create tag if needed
     runs-on: ubuntu-latest
     container: fedora:41
+    outputs:
+      version: ${{ steps.upstream.outputs.version }}
+      tag-created: ${{ steps.create_tag.outputs.created }}
     steps:
       - name: Install tooling
         run: |
