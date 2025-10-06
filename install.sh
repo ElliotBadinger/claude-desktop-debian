@@ -58,8 +58,8 @@ detect_arch() {
 
 detect_pkg_mgr() {
   if [[ -r /etc/os-release ]]; then
-    # shellcheck source=/etc/os-release
     # shellcheck disable=SC1091
+    # shellcheck source=/etc/os-release
     . /etc/os-release
     local id="${ID:-}"
     local like="${ID_LIKE:-}"
@@ -72,8 +72,10 @@ detect_pkg_mgr() {
 # shellcheck source=/etc/os-release
 fedora_version() {
   # shellcheck disable=SC1091
+  # shellcheck source=/etc/os-release
   . /etc/os-release 2>/dev/null || true
-  echo "${VERSION_ID:-40}" | cut -d. -f1
+  local version="${VERSION_ID:-40}"
+  echo "$version" | cut -d. -f1
 }
 
 get_latest_release_json() {
@@ -274,7 +276,8 @@ perform_install() {
 }
 
 try_update_with_fallback() {
-  local mgr="$1"; local arch="$2"
+  local mgr="$1"
+  local arch="$2"
   if perform_install "$mgr" "$arch"; then
     log "Install/Update completed"
     return 0
@@ -285,9 +288,11 @@ try_update_with_fallback() {
 }
 
 main() {
-  local arch; arch="$(detect_arch)"
+  local arch
+  arch="$(detect_arch)"
   if [[ "$arch" == "unsupported" ]]; then echo "Unsupported architecture $(uname -m)"; exit 1; fi
-  local mgr; mgr="$(detect_pkg_mgr)"
+  local mgr
+  mgr="$(detect_pkg_mgr)"
   log "Detected: mgr=$mgr arch=$arch"
 
   if [[ "$UPDATE_ONLY" -eq 1 ]]; then
